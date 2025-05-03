@@ -177,6 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async () => {
     setIsLoading(true);
     try {
+      // 현재 도메인(배포 환경 또는 로컬호스트) 기반으로 설정
       const redirectUrl = window.location.origin;
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
