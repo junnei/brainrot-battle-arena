@@ -61,10 +61,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (!isMounted) return;
           console.log('[AuthContext] onAuthStateChange Event:', event);
 
-          // Handle session related events (excluding INITIAL_SESSION as it's handled above)
-          if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session) {
-            await handleSessionChange(session);
-          } 
+          if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
+            const { data: { session: freshSession } } = await supabase.auth.getSession();
+            if (freshSession) {
+              await handleSessionChange(freshSession);
+            }
+          }
           // Handle sign out
           else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
             console.log('[AuthContext] Signed out or user deleted.');
