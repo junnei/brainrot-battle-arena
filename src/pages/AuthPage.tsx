@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 const AuthPage: React.FC = () => {
   const { t } = useTranslation();
@@ -29,7 +29,19 @@ const AuthPage: React.FC = () => {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-gaming-card p-8 rounded-lg shadow-xl animate-fade-in">
+      <div className="max-w-md w-full space-y-8 bg-gaming-card p-8 rounded-lg shadow-xl animate-fade-in relative">
+        {/* 돌아가기 버튼 - 절대 위치로 왼쪽 상단에 배치 */}
+        <div className="absolute left-4 top-4">
+          <Button 
+            onClick={() => navigate('/')}
+            variant="ghost"
+            size="sm"
+            className="text-primary-400 hover:text-primary-300 transition-colors flex items-center"
+            leftIcon={<ArrowLeft size={16} />}
+          >
+            {t('authPage.back')}
+          </Button>
+        </div>
         <div className="text-center">
           <h2 className="text-3xl font-bold text-white">
             {t('authPage.loginTitle')}
@@ -45,7 +57,7 @@ const AuthPage: React.FC = () => {
             fullWidth
             size="lg"
             isLoading={isLoading}
-            className="flex items-center justify-center space-x-2 bg-white hover:bg-gray-100 text-gray-800"
+            className="flex items-center justify-center space-x-2 bg-white hover:bg-gray-100 !text-black font-medium"
           >
             <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
               <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
@@ -57,17 +69,6 @@ const AuthPage: React.FC = () => {
             </svg>
             <span>{t('authPage.googleLoginButton')}</span>
           </Button>
-          
-          <div className="flex items-center justify-center mt-8">
-            <Button 
-              onClick={() => navigate('/')}
-              variant="outline"
-              className="text-primary-400 hover:text-primary-300 transition-colors"
-              rightIcon={<ArrowRight size={18} />}
-            >
-              {t('common.backToHome')}
-            </Button>
-          </div>
         </div>
       </div>
     </div>

@@ -10,7 +10,7 @@ import Input from '../components/ui/Input';
 import Textarea from '../components/ui/Textarea';
 import { Battle } from '../types';
 import BrainrotFormModal from '../components/brainrots/BrainrotFormModal';
-import ConfirmModal from '../components/ConfirmModal';
+import ConfirmModal from '../components/modals/ConfirmModal';
 import { toast } from 'react-toastify';
 
 const HAS_STARTED_KEY = 'has_started_arena';

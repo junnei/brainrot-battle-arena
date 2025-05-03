@@ -97,6 +97,9 @@
     "uploadingImage": "이미지 업로드 중..."
   },
   "authPage": {
+    "back": "돌아가기",
+    "login": "로그인",
+    "logout": "로그아웃",
     "loginTitle": "로그인",
     "signupTitle": "회원가입",
     "loginDescription": "구글 계정으로 로그인하여 브레인롯 배틀 아레나에 참여하세요",
@@ -114,7 +117,11 @@
     "toggleLogin": "이미 계정이 있으신가요? 로그인",
     "loginError": "로그인 실패. 다시 시도해 주세요.",
     "signupError": "회원가입 실패. 다시 시도해 주세요.",
-    "googleLoginButton": "구글로 로그인"
+    "googleLoginButton": "구글로 로그인",
+    "errors": {
+      "noUserInSession": "세션에 사용자 정보가 없습니다",
+      "loginFailed": "로그인 실패. 다시 시도해 주세요."
+    }
   },
   "profilePage": {
     "title": "계정 설정",
@@ -143,10 +150,5 @@
     "imagePolicy": "이미지 정책",
     "uploadPermission": "인증된 사용자만 이미지를 업로드할 수 있습니다.",
     "deletePermission": "사용자는 자신의 이미지만 삭제할 수 있습니다."
-  },
-  "auth": {
-    "errors": {
-      "noUserInSession": "세션에 사용자 정보가 없습니다"
-    }
   }
 } 

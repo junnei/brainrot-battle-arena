@@ -97,6 +97,9 @@
     "uploadingImage": "Uploading image..."
   },
   "authPage": {
+    "back": "Back",
+    "login": "Login",
+    "logout": "Logout",
     "loginTitle": "Login",
     "signupTitle": "Sign Up",
     "loginDescription": "Login with your Google account to join the Brainrot Battle Arena",
@@ -114,7 +117,11 @@
     "toggleLogin": "Already have an account? Login",
     "loginError": "Login failed. Please try again.",
     "signupError": "Signup failed. Please try again.",
-    "googleLoginButton": "Login with Google"
+    "googleLoginButton": "Login with Google",
+    "errors": {
+      "noUserInSession": "No user information in session",
+      "loginFailed": "Login failed. Please try again."
+    }
   },
   "profilePage": {
     "title": "Account Settings",
@@ -143,10 +150,5 @@
     "imagePolicy": "Image Policy",
     "uploadPermission": "Only authenticated users can upload images.",
     "deletePermission": "Users can only delete their own images."
-  },
-  "auth": {
-    "errors": {
-      "noUserInSession": "No user information in session"
-    }
   }
 } 
