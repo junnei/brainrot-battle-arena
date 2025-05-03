@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Sword, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Sword } from 'lucide-react';
 import Button from '../components/ui/Button';
 import BrainrotCard from '../components/brainrots/BrainrotCard';
 import { useBrainrots } from '../context/BrainrotContext';
@@ -9,6 +9,8 @@ import { useTranslation } from 'react-i18next';
 const BattlePage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const context = useBrainrots();
+  // non-null assertion으로 타입 에러 해결
   const { 
     selectedBrainrot, 
     opponentBrainrot, 
@@ -16,16 +18,38 @@ const BattlePage: React.FC = () => {
     error, 
     findOpponent, 
     startBattle,
-  } = useBrainrots();
+    setSelectedBrainrot,
+    brainrots
+  } = context!; // context가 undefined일 수 없다고 TypeScript에 알려줍니다
   const [isBattleReady, setIsBattleReady] = useState(false);
   const [isBattleStarted, setIsBattleStarted] = useState(false);
 
   // Check if user has selected a brainrot
   useEffect(() => {
+    // 선택된 브레인롯이 없으면 로컬 스토리지에서 확인
     if (!selectedBrainrot) {
-      navigate('/');
+      const savedBrainrotId = localStorage.getItem('selectedBrainrotId');
+      
+      // 저장된 ID가 있으면 디버깅 로그 출력
+      if (savedBrainrotId) {
+        console.log('로컬 스토리지에서 불러온 브레인롯 ID:', savedBrainrotId);
+        // context의 selectBrainrot 함수로 브레인롯 선택
+        const brainrot = context?.brainrots.find(b => b.id === savedBrainrotId);
+        if (brainrot) {
+          // 브레인롯 찾으면 선택
+          context?.setSelectedBrainrot(brainrot);
+        } else {
+          // 찾지 못했으면 홈으로 이동
+          console.error('저장된 브레인롯 ID에 해당하는 브레인롯을 찾을 수 없습니다');
+          navigate('/');
+        }
+      } else {
+        // 저장된 ID도 없으면 홈으로 이동
+        console.error('선택된 브레인롯이 없습니다');
+        navigate('/');
+      }
     }
-  }, [selectedBrainrot, navigate]);
+  }, [selectedBrainrot, navigate, context]);
 
   // Find an opponent if none exists
   useEffect(() => {
@@ -44,23 +68,35 @@ const BattlePage: React.FC = () => {
   }, [selectedBrainrot, opponentBrainrot]);
 
   // Handle start battle
-  const handleStartBattle = () => {
+  const handleStartBattle = async () => {
     setIsBattleStarted(true);
     
-    // Add a delay for animation effect
-    setTimeout(() => {
-      startBattle();
-      
-      // Navigate to result page after battle animation
-      setTimeout(() => {
-        navigate('/result', { state: { battleCompleted: true } });
-      }, 1500);
-    }, 1000);
-  };
-
-  // Handle find new opponent
-  const handleFindNewOpponent = () => {
-    findOpponent();
+    try {
+      // Add a delay for animation effect
+      setTimeout(async () => {
+        try {
+          // 배틀 시작
+          console.log('배틀 시작 - 선택된 브레인롯:', selectedBrainrot?.id);
+          console.log('배틀 시작 - 상대 브레인롯:', opponentBrainrot?.id);
+          
+          await startBattle();
+          
+          // Navigate to result page after battle animation
+          setTimeout(() => {
+            navigate('/result', { state: { battleCompleted: true } });
+          }, 1500);
+        } catch (error) {
+          console.error('배틀 시작 중 오류 발생:', error);
+          setIsBattleStarted(false);
+          // 배틀 시작 실패 시 홈으로 이동
+          alert('배틀 시작 중 오류가 발생했습니다. 다시 시도해주세요.');
+          navigate('/');
+        }
+      }, 1000);
+    } catch (error) {
+      console.error('배틀 시작 중 예외 발생:', error);
+      setIsBattleStarted(false);
+    }
   };
 
   // Handle back to home
@@ -118,6 +154,24 @@ const BattlePage: React.FC = () => {
         </div>
       )}
       
+      {selectedBrainrot && opponentBrainrot && !isBattleStarted && (
+        <div className="text-center mb-4">
+          <div className="bg-gaming-dark/50 rounded-lg p-3 mb-4 border border-gray-700/30 inline-block">
+            <p className="text-gray-300 text-sm">
+              <span className="text-primary-400 font-medium">{t('common.yourElo')}:</span> {selectedBrainrot.elo || 1000} vs 
+              <span className="text-accent-400 font-medium ml-2">{t('common.opponentElo')}:</span> {opponentBrainrot.elo || 1000}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {Math.abs((selectedBrainrot.elo || 1000) - (opponentBrainrot.elo || 1000)) <= 50 
+                ? t('battlePage.fairMatch') 
+                : Math.abs((selectedBrainrot.elo || 1000) - (opponentBrainrot.elo || 1000)) <= 150
+                  ? t('battlePage.closeMatch')
+                  : t('battlePage.challengingMatch')}
+            </p>
+          </div>
+        </div>
+      )}
+      
       <div className="flex flex-col items-center">
         <div className="relative mb-4 w-full">
           <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10">
@@ -142,9 +196,9 @@ const BattlePage: React.FC = () => {
                   <div className="bg-gaming-dark border border-primary-500/30 rounded-xl p-3 shadow-lg hover:shadow-primary-500/10 transition-shadow">
                     <BrainrotCard 
                       brainrot={selectedBrainrot} 
-                      isBattle 
                       showActions={false}
                       showFullDescription={true}
+                      isBattleWinner={false}
                     />
                   </div>
                 </div>
@@ -162,9 +216,9 @@ const BattlePage: React.FC = () => {
                   <div className="bg-gaming-dark border border-accent-500/30 rounded-xl p-3 shadow-lg hover:shadow-accent-500/10 transition-shadow">
                     <BrainrotCard 
                       brainrot={opponentBrainrot} 
-                      isBattle 
                       showActions={false}
                       showFullDescription={true}
+                      isBattleWinner={false}
                     />
                   </div>
                 </div>

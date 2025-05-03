@@ -1,13 +1,19 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import BrainrotForm from './BrainrotForm';
 import { Brainrot } from '../../types';
+
+interface FormData {
+  name: string;
+  description: string;
+  imageUrl: string;
+  id?: string;
+}
 
 interface BrainrotFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: any) => void;
+  onSubmit: (data: FormData) => void;
   title: string;
   brainrot?: Brainrot;
 }
@@ -19,7 +25,6 @@ const BrainrotFormModal: React.FC<BrainrotFormModalProps> = ({
   title,
   brainrot
 }) => {
-  const { t } = useTranslation();
 
   if (!isOpen) return null;
 

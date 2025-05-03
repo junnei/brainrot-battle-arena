@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Swords, Code, User } from 'lucide-react';
+import { Home, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const BottomNav = () => {
@@ -12,8 +12,6 @@ const BottomNav = () => {
 
   const navItems = [
     { path: '/', icon: Home, labelKey: 'bottomNav.home' },
-    // { path: '/battle', icon: Swords, label: '랭킹' },
-    // { path: '/battle', icon: Code, label: '코드 배틀' },
     { path: '/profile', icon: User, labelKey: 'bottomNav.profile' },
   ];
 

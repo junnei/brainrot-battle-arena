@@ -22,8 +22,6 @@ const LanguageSwitcher: React.FC = () => {
     console.log('Current language:', i18n.language);
   }, [i18n.language]);
   
-  const currentLang = LANGUAGES.find(lang => lang.code === i18n.language.split('-')[0]) || LANGUAGES[0];
-  
   // 언어 변경 핸들러
   const handleChangeLanguage = (langCode: string) => {
     i18n.changeLanguage(langCode);

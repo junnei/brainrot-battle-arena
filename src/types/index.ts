@@ -13,6 +13,7 @@ export interface Brainrot {
   imageUrl?: string;
   createdAt: Date;
   elo: number;
+  riskLevel: number;
   stats: {
     wins: number;
     losses: number;
@@ -21,13 +22,21 @@ export interface Brainrot {
 }
 
 export interface Battle {
-  id: string;
-  playerBrainrotId: string;
-  opponentBrainrotId: string;
-  winnerId: string | null;
-  createdAt: Date;
-  playerBrainrot?: Brainrot;
-  opponentBrainrot?: Brainrot;
+  id: string;                       // 배틀의 고유 식별자 (10자리 16진수 ID)
+  playerBrainrotId: string;         // 플레이어 브레인롯 ID (외래 키)
+  opponentBrainrotId: string;       // 상대방 브레인롯 ID (외래 키) 
+  winnerId: string | null;          // 승자 브레인롯 ID (외래 키, 무승부인 경우 null)
+  createdAt: Date;                  // 배틀 생성 시간
+  playerBrainrot?: Brainrot;        // 플레이어 브레인롯 객체 (클라이언트 참조)
+  opponentBrainrot?: Brainrot;      // 상대방 브레인롯 객체 (클라이언트 참조)
+  battleResult?: 'WIN' | 'LOSS' | 'DRAW'; // 배틀 결과 ('WIN', 'LOSS', 'DRAW')
+  battleNarrative?: string;         // 배틀 과정 설명 텍스트
+  isPlayerWon?: boolean;            // 플레이어가 이겼는지 여부 (계산된 필드)
+  isDraw?: boolean;                 // 무승부인지 여부 (계산된 필드)
+  playerStartElo?: number;          // 전투 시작 전 플레이어의 ELO 점수
+  playerEndElo?: number;            // 전투 후 플레이어의 ELO 점수
+  opponentStartElo?: number;        // 전투 시작 전 상대방의 ELO 점수
+  opponentEndElo?: number;          // 전투 후 상대방의 ELO 점수
 }
 
 export interface AuthContextType {
@@ -46,13 +55,14 @@ export interface BrainrotContextType {
   selectedBrainrot: Brainrot | null;
   opponentBrainrot: Brainrot | null;
   battleResult: Brainrot | null;
+  currentBattle: Battle | null;
   battles: Battle[];
   isLoading: boolean;
   error: string | null;
   createBrainrot: (brainrot: Omit<Brainrot, 'id' | 'userId' | 'createdAt' | 'stats'>) => Promise<void>;
   selectBrainrot: (brainrotId: string) => void;
   findOpponent: () => void;
-  startBattle: () => void;
+  startBattle: () => Promise<void>;
   resetBattle: () => void;
   getUserBattles: (userId: string) => Battle[];
   getBrainrotBattles: (brainrotId: string) => Battle[];

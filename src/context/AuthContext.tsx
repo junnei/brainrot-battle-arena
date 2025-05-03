@@ -6,9 +6,6 @@ import { useTranslation } from 'react-i18next';
 
 // 개발 모드에서만 로깅
 const IS_DEV = import.meta.env.DEV;
-const logDebug = (message: string, ...args: any[]) => {
-  if (IS_DEV) console.log(message, ...args);
-};
 
 // 인증 컨텍스트 생성
 const AuthContext = createContext<AuthContextType>({
@@ -28,7 +25,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { t } = useTranslation();
 
   // 프로필 데이터 디버그 로깅 함수
-  const debugProfileData = (profile: any, source: string) => {
+  const debugProfileData = (profile: {id?: string; user_id?: string; nickname?: string}, source: string) => {
     if (IS_DEV) {
       console.log(`프로필 데이터 (${source}):`, {
         id: profile?.id,

@@ -2,9 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useBrainrots } from '../context/BrainrotContext';
-import BrainrotCard from '../components/brainrots/BrainrotCard';
 import Button from '../components/ui/Button';
-import Input from '../components/ui/Input';
 import { useTranslation } from 'react-i18next';
 import { User, Mail, Edit2, Save, X, LogOut, Shield, Award, BarChart2 } from 'lucide-react';
 
@@ -18,7 +16,8 @@ const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { user, logout, updateUser, isLoading } = useAuth();
-  const { userBrainrots, getUserBattles, selectBrainrot } = useBrainrots();
+  const brainrotContext = useBrainrots();
+  const { userBrainrots, getUserBattles } = brainrotContext!;
   const [newUsername, setNewUsername] = useState(user?.username || '');
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [message, setMessage] = useState<MessageType>({ text: '', type: null });
@@ -44,7 +43,7 @@ const ProfilePage: React.FC = () => {
   
   // 사용자 브레인롯 중 하나가 이긴 경우를 승리로 계산
   const wins = userBattles.filter(battle => 
-    userBrainrotIds.includes(battle.winnerId)
+    battle.winnerId && userBrainrotIds.includes(battle.winnerId)
   ).length;
   
   const losses = totalBattles - wins;

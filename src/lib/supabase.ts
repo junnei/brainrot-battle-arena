@@ -1,11 +1,11 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // 개발 모드에서만 로깅하도록 설정
 const IS_DEV = import.meta.env.DEV;
-const logDebug = (message: string, ...args: any[]) => {
+const logDebug = (message: string, ...args: unknown[]) => {
   if (IS_DEV) console.log(message, ...args);
 };
 
@@ -30,7 +30,7 @@ const isTokenValid = () => {
     const expiresAt = token?.expires_at;
     
     return expiresAt && new Date(expiresAt * 1000) > new Date();
-  } catch (e) {
+  } catch {
     return false;
   }
 };

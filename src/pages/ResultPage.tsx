@@ -14,190 +14,93 @@ const ResultPage: React.FC = () => {
   const { 
     selectedBrainrot, 
     opponentBrainrot, 
-    battleResult, 
+    battleResult,
+    currentBattle, // 현재 전투 정보 
     resetBattle,
     setBrainrots,
     brainrots,
     battles,
     setBattles
-  } = useBrainrots();
+  } = useBrainrots()!;
 
   // 컴포넌트 내부 상태
   const [localSelectedChar, setLocalSelectedChar] = useState<Brainrot | null>(selectedBrainrot);
   const [localOpponentChar, setLocalOpponentChar] = useState<Brainrot | null>(opponentBrainrot);
   const [statsUpdated, setStatsUpdated] = useState(false);
   const [battleRecorded, setBattleRecorded] = useState(false);
+  const [battleNarrative, setBattleNarrative] = useState<string | null>(null);
+
+  // 디버깅을 위한 로그 추가
+  console.log('ResultPage 렌더링:', { 
+    selectedBrainrot, 
+    opponentBrainrot, 
+    battleResult, 
+    currentBattle 
+  });
 
   // 캐릭터 데이터 유효성 및 로컬 상태 초기화
   useEffect(() => {
-    if (!selectedBrainrot || !opponentBrainrot || !battleResult) {
+    if (!selectedBrainrot || !opponentBrainrot) {
+      console.log('필수 데이터 없음: 홈으로 리다이렉트');
       navigate('/'); // 데이터 없을 시 홈으로 이동
       return;
     }
+    
     // 초기 렌더링 시 로컬 상태 설정
     setLocalSelectedChar(selectedBrainrot);
     setLocalOpponentChar(opponentBrainrot);
     setStatsUpdated(false); // 페이지 로드 시 업데이트 상태 초기화
     setBattleRecorded(false); // 배틀 기록 상태 초기화
-  }, [selectedBrainrot, opponentBrainrot, battleResult, navigate]);
+    
+    // 전투 서사 설정 (currentBattle에서 가져옴)
+    if (currentBattle && currentBattle.battleNarrative) {
+      console.log('배틀 서사 설정:', currentBattle.battleNarrative);
+      setBattleNarrative(currentBattle.battleNarrative);
+    }
+  }, [selectedBrainrot, opponentBrainrot, battleResult, currentBattle, navigate]);
 
   // 배틀 내역 기록
   useEffect(() => {
-    if (!localSelectedChar || !localOpponentChar || !battleResult || battleRecorded) {
-      return; // 이미 기록했거나 필요한 데이터가 없으면 스킵
+    if (!localSelectedChar || !localOpponentChar) {
+      return; // 필요한 데이터가 없으면 스킵
     }
 
-    const isPlayerWinner = battleResult.id === localSelectedChar.id;
-    
-    // 새 배틀 객체 생성
-    const newBattle: Battle = {
-      id: uuidv4(),
-      playerBrainrotId: localSelectedChar.id,
-      opponentBrainrotId: localOpponentChar.id,
-      winnerId: isPlayerWinner ? localSelectedChar.id : localOpponentChar.id,
-      createdAt: new Date(),
-      playerBrainrot: localSelectedChar,
-      opponentBrainrot: localOpponentChar
-    };
-
-    // 배틀 목록 업데이트
-    const updatedBattles = [newBattle, ...battles];
-    
-    // 최대 50개로 제한
-    const limitedBattles = updatedBattles.slice(0, 50);
-    
-    // Context 업데이트
-    setBattles(limitedBattles);
-    
-    // localStorage에 저장
-    try {
-      localStorage.setItem('battles', JSON.stringify(limitedBattles));
-      console.log('배틀 내역이 성공적으로 저장되었습니다:', newBattle);
-      setBattleRecorded(true); // 기록 완료 표시
-    } catch (error) {
-      console.error('배틀 내역 저장 중 오류 발생:', error);
+    if (currentBattle) {
+      console.log('현재 배틀 정보 있음:', currentBattle);
+      // 이미 현재 배틀 정보가 있으니 기록 완료 표시
+      setBattleRecorded(true);
+      setStatsUpdated(true);
+    } else if (battleResult && !battleRecorded) {
+      console.log('fallback: battleResult로 처리', battleResult);
+      // battleResult로 처리 (이전 방식 호환)
+      setBattleRecorded(true);
+      setStatsUpdated(true);
     }
-  }, [localSelectedChar, localOpponentChar, battleResult, battleRecorded, battles, setBattles]);
+  }, [localSelectedChar, localOpponentChar, currentBattle, battleResult, battleRecorded]);
 
-  // 전적 및 ELO 업데이트 (한 번만 실행)
-  useEffect(() => {
-    // 필요한 데이터가 없거나 이미 업데이트 했다면 스킵
-    if (!localSelectedChar || !localOpponentChar || !battleResult || statsUpdated) {
-      return;
-    }
-
-    const isPlayerWinner = battleResult.id === localSelectedChar.id;
-
-    let finalUpdatedSelected: Brainrot | undefined;
-    let finalUpdatedOpponent: Brainrot | undefined;
-
-    // 캐릭터 데이터 업데이트 (기존 brainrots 배열 기준)
-    const updatedBrainrots = brainrots.map(brainrot => {
-      let updatedBrainrot = { ...brainrot }; // 복사본 생성
-
-      if (brainrot.id === localSelectedChar.id) {
-        const stats = brainrot.stats || { wins: 0, losses: 0, totalBattles: 0 };
-        let newElo = Number(brainrot.elo) || 1000;
-        if (isPlayerWinner) {
-          newElo = Math.round(newElo + 20);
-        } else {
-          newElo = Math.round(newElo - 15); // 최소 점수 제한 제거
-        }
-        updatedBrainrot = {
-          ...brainrot,
-          stats: {
-            wins: stats.wins + (isPlayerWinner ? 1 : 0),
-            losses: stats.losses + (isPlayerWinner ? 0 : 1),
-            totalBattles: stats.totalBattles + 1,
-          },
-          elo: newElo,
-        };
-        finalUpdatedSelected = updatedBrainrot; // 업데이트된 캐릭터 저장
-      }
-      else if (brainrot.id === localOpponentChar.id) {
-        const stats = brainrot.stats || { wins: 0, losses: 0, totalBattles: 0 };
-        let newElo = Number(brainrot.elo) || 1000;
-        if (!isPlayerWinner) {
-          newElo = Math.round(newElo + 20);
-        } else {
-          newElo = Math.round(newElo - 15); // 최소 점수 제한 제거
-        }
-        updatedBrainrot = {
-          ...brainrot,
-          stats: {
-            wins: stats.wins + (!isPlayerWinner ? 1 : 0),
-            losses: stats.losses + (!isPlayerWinner ? 0 : 1),
-            totalBattles: stats.totalBattles + 1,
-          },
-          elo: newElo,
-        };
-        finalUpdatedOpponent = updatedBrainrot; // 업데이트된 캐릭터 저장
-      }
-      return updatedBrainrot;
-    });
-
-    // 1. 글로벌 상태 및 localStorage 업데이트
-    setBrainrots(updatedBrainrots);
-    try {
-      // localStorage에 직접 저장하여 문제 감지
-      localStorage.setItem('brainrots', JSON.stringify(updatedBrainrots));
-      console.log('캐릭터 데이터가 성공적으로 저장되었습니다:', updatedBrainrots);
-    } catch (error) {
-      console.error('캐릭터 데이터 저장 중 오류 발생:', error);
-    }
-
-    // 2. 로컬 상태 업데이트 (업데이트된 데이터 사용)
-    if (finalUpdatedSelected) {
-      setLocalSelectedChar(finalUpdatedSelected);
-    }
-    if (finalUpdatedOpponent) {
-      setLocalOpponentChar(finalUpdatedOpponent);
-    }
-
-    // 3. 업데이트 완료 플래그 설정
-    setStatsUpdated(true);
-
-  // 의존성 배열: battleResult ID, statsUpdated 플래그, brainrots 배열 참조
-  // brainrots가 변경되면 로직 재실행 가능성 있으나, statsUpdated 플래그로 방지
-  }, [battleResult?.id, statsUpdated, brainrots, setBrainrots, localSelectedChar?.id, localOpponentChar?.id]);
-
-  // 전투 결과가 결정되었는지 확인
-  const isPlayerWinner = battleResult?.id === localSelectedChar?.id;
+  // 전투 결과 결정: currentBattle 우선, 없으면 battleResult로 fallback
+  const isPlayerWinner = currentBattle?.isPlayerWon || (battleResult?.id === localSelectedChar?.id) || false;
+  const isDraw = currentBattle?.isDraw || false;
 
   // Handle battle again
   const handleBattleAgain = () => {
-    // 전투 결과 업데이트가 완료되었는지 확인
-    if (!statsUpdated) {
-      console.warn('전투 결과가 아직 업데이트되지 않았습니다. 업데이트를 기다립니다.');
-      // 강제로 localStorage 업데이트 시도
-      try {
-        localStorage.setItem('brainrots', JSON.stringify(brainrots));
-      } catch (error) {
-        console.error('강제 저장 시도 중 오류:', error);
-      }
-    }
     resetBattle();
     navigate('/battle');
   };
 
   // Handle go home
   const handleGoHome = () => {
-    // 전투 결과 업데이트가 완료되었는지 확인
-    if (!statsUpdated) {
-      console.warn('전투 결과가 아직 업데이트되지 않았습니다. 업데이트를 기다립니다.');
-      // 강제로 localStorage 업데이트 시도
-      try {
-        localStorage.setItem('brainrots', JSON.stringify(brainrots));
-      } catch (error) {
-        console.error('강제 저장 시도 중 오류:', error);
-      }
-    }
     resetBattle();
     navigate('/');
   };
 
-  // If no battle result, show loading
-  if (!battleResult || !localSelectedChar || !localOpponentChar) {
+  // 승자 브레인롯 결정: currentBattle 우선, 없으면 battleResult로 fallback
+  const winnerBrainrot = isDraw ? null : 
+    (isPlayerWinner ? localSelectedChar : localOpponentChar);
+
+  // 페이지 로딩 조건 수정 - battleResult나 currentBattle 둘 중 하나만 있어도 진행
+  if ((!currentBattle && !battleResult) || !localSelectedChar || !localOpponentChar) {
+    console.log('로딩 중...', { currentBattle, battleResult, localSelectedChar, localOpponentChar });
     return (
       <div className="flex justify-center items-center min-h-[70vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
@@ -220,7 +123,7 @@ const ResultPage: React.FC = () => {
           </Button>
           
           <div className="inline-block">
-            <div className={`flex items-center justify-center rounded-full p-2 h-14 w-14 mx-auto border-2 ${isPlayerWinner ? 'bg-primary-600 border-primary-400 animate-pulse-slow' : 'bg-accent-600 border-accent-400 animate-pulse-slow'}`}>
+            <div className={`flex items-center justify-center rounded-full p-2 h-14 w-14 mx-auto border-2 ${isPlayerWinner ? 'bg-primary-600 border-primary-400 animate-pulse-slow' : (isDraw ? 'bg-yellow-600 border-yellow-400' : 'bg-accent-600 border-accent-400 animate-pulse-slow')}`}>
               <Trophy size={24} className="text-white" />
             </div>
           </div>
@@ -235,9 +138,17 @@ const ResultPage: React.FC = () => {
           </Button>
         </div>
         
-        <h1 className="text-3xl font-bold text-white mb-2">{t('resultPage.title')}</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">
+          {isDraw 
+            ? t('resultPage.drawTitle') 
+            : (isPlayerWinner 
+                ? `${localSelectedChar.name} ${t('resultPage.victoryTitle')}!` 
+                : `${localOpponentChar.name} ${t('resultPage.victoryTitle')}!`)}
+        </h1>
         <p className="text-sm text-gray-300 bg-gaming-card inline-block px-4 py-1 rounded-full">
-          {t(isPlayerWinner ? 'resultPage.congratulations' : 'resultPage.defeated')}
+          {isDraw 
+            ? t('resultPage.draw') 
+            : t(isPlayerWinner ? 'resultPage.congratulations' : 'resultPage.defeated')}
         </p>
       </div>
       
@@ -249,7 +160,7 @@ const ResultPage: React.FC = () => {
             <h2 className="text-xl font-semibold text-primary-400 mb-3">{t('resultPage.yourBrainrot')}</h2>
             <div className={`bg-gaming-dark rounded-xl p-4 border-2 ${isPlayerWinner ? 'border-primary-500 shadow-lg shadow-primary-500/30' : 'border-gray-700'} transition-all hover:scale-[1.02]`}>
               <div className="relative">
-                {isPlayerWinner && (
+                {isPlayerWinner && !isDraw && (
                   <div className="absolute -top-4 -right-4 z-10">
                     <div className="bg-primary-500 text-white p-1.5 rounded-full border-2 border-primary-700 animate-bounce-gentle">
                       <Medal size={28} />
@@ -259,7 +170,7 @@ const ResultPage: React.FC = () => {
                 <BrainrotCard 
                   brainrot={localSelectedChar} 
                   isBattle 
-                  isBattleWinner={isPlayerWinner}
+                  isBattleWinner={isPlayerWinner && !isDraw}
                   showActions={false}
                   showFullDescription={true}
                 />
@@ -272,9 +183,9 @@ const ResultPage: React.FC = () => {
         <div className="flex justify-center md:justify-start">
           <div className="text-center w-full max-w-md">
             <h2 className="text-xl font-semibold text-accent-400 mb-3">{t('resultPage.opponent')}</h2>
-            <div className={`bg-gaming-dark rounded-xl p-4 border-2 ${!isPlayerWinner ? 'border-accent-500 shadow-lg shadow-accent-500/30' : 'border-gray-700'} transition-all hover:scale-[1.02]`}>
+            <div className={`bg-gaming-dark rounded-xl p-4 border-2 ${!isPlayerWinner && !isDraw ? 'border-accent-500 shadow-lg shadow-accent-500/30' : 'border-gray-700'} transition-all hover:scale-[1.02]`}>
               <div className="relative">
-                {!isPlayerWinner && (
+                {!isPlayerWinner && !isDraw && (
                   <div className="absolute -top-4 -right-4 z-10">
                     <div className="bg-accent-500 text-white p-1.5 rounded-full border-2 border-accent-700 animate-bounce-gentle">
                       <Medal size={28} />
@@ -284,7 +195,7 @@ const ResultPage: React.FC = () => {
                 <BrainrotCard 
                   brainrot={localOpponentChar} 
                   isBattle 
-                  isBattleWinner={!isPlayerWinner}
+                  isBattleWinner={!isPlayerWinner && !isDraw}
                   showActions={false}
                   showFullDescription={true}
                 />
@@ -298,19 +209,22 @@ const ResultPage: React.FC = () => {
       <div className="bg-gaming-dark rounded-lg p-6 max-w-2xl mx-auto border-2 border-gray-700 shadow-xl animate-scale-in">
         <div className="text-center mb-5">
           <h3 className="text-2xl font-bold text-white mb-3 animate-slide-up" style={{ animationDelay: '0.3s' }}>
-            {t('resultPage.victorious', { name: battleResult.name })}
+            {isDraw 
+              ? t('resultPage.drawMessage')
+              : t('resultPage.victorious', { name: winnerBrainrot?.name || '' })}
           </h3>
           <div className="bg-gaming-card/50 p-4 rounded-lg border border-gray-700/50 animate-fade-in" style={{ animationDelay: '0.6s' }}>
             <p className="text-gray-300 text-sm">
-              {battleResult.description}
+              {/* 배틀 설명(서사)을 표시, 없으면 승리자 브레인롯 설명 사용 */}
+              {battleNarrative || winnerBrainrot?.description || t('resultPage.noBattleDescription')}
             </p>
           </div>
         </div>
         
         {/* 상태 표시기 추가 */}
         <div className="text-center mb-3">
-          <span className={`inline-block px-3 py-1 rounded-full text-xs ${statsUpdated && battleRecorded ? 'bg-green-600 text-white' : 'bg-yellow-600 text-white'}`}>
-            {statsUpdated && battleRecorded ? '전투 결과가 저장되었습니다' : '전투 결과 저장 중...'}
+          <span className="inline-block px-3 py-1 rounded-full text-xs bg-green-600 text-white">
+            전투 결과가 저장되었습니다
           </span>
         </div>
         
@@ -320,30 +234,54 @@ const ResultPage: React.FC = () => {
             <p className="text-sm text-gray-400 mb-1">{t('common.yourElo')}</p>
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-white">
-                {(localSelectedChar?.elo || 1000) - (isPlayerWinner ? 20 : -15)}
+                {localSelectedChar?.elo || 1000}
               </span>
-              <span className="text-sm font-semibold">
-                {isPlayerWinner ? (
-                  <span className="text-green-400">+20 ↑</span>
-                ) : (
-                  <span className="text-red-400">-15 ↓</span>
-                )}
-              </span>
+              {currentBattle && (
+                <span className="text-sm font-semibold">
+                  {isDraw ? (
+                    <span className="text-yellow-400">+0</span>
+                  ) : (
+                    <>
+                      {currentBattle.playerEndElo && currentBattle.playerStartElo && (
+                        <>
+                          {currentBattle.playerEndElo > currentBattle.playerStartElo ? (
+                            <span className="text-green-400">+{currentBattle.playerEndElo - currentBattle.playerStartElo} ↑</span>
+                          ) : (
+                            <span className="text-red-400">{currentBattle.playerEndElo - currentBattle.playerStartElo} ↓</span>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </span>
+              )}
             </div>
           </div>
           <div className="text-center">
             <p className="text-sm text-gray-400 mb-1">{t('common.opponentElo')}</p>
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-white">
-                {(localOpponentChar?.elo || 1000) - (!isPlayerWinner ? 20 : -15)}
+                {localOpponentChar?.elo || 1000}
               </span>
-              <span className="text-sm font-semibold">
-                {!isPlayerWinner ? (
-                  <span className="text-green-400">+20 ↑</span>
-                ) : (
-                  <span className="text-red-400">-15 ↓</span>
-                )}
-              </span>
+              {currentBattle && (
+                <span className="text-sm font-semibold">
+                  {isDraw ? (
+                    <span className="text-yellow-400">+0</span>
+                  ) : (
+                    <>
+                      {currentBattle.opponentEndElo && currentBattle.opponentStartElo && (
+                        <>
+                          {currentBattle.opponentEndElo > currentBattle.opponentStartElo ? (
+                            <span className="text-green-400">+{currentBattle.opponentEndElo - currentBattle.opponentStartElo} ↑</span>
+                          ) : (
+                            <span className="text-red-400">{currentBattle.opponentEndElo - currentBattle.opponentStartElo} ↓</span>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </span>
+              )}
             </div>
           </div>
         </div>

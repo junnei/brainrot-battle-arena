@@ -20,6 +20,7 @@ const sampleBrainrots: Brainrot[] = [
     createdAt: new Date(),
     stats: { wins: 0, losses: 0, totalBattles: 0 },
     elo: 1000,
+    riskLevel: 3, // 높은 위험도
   },
   {
     id: uuidv4(),
@@ -30,6 +31,7 @@ const sampleBrainrots: Brainrot[] = [
     createdAt: new Date(),
     stats: { wins: 0, losses: 0, totalBattles: 0 },
     elo: 1000,
+    riskLevel: 2, // 중간 위험도
   },
   {
     id: uuidv4(),
@@ -40,6 +42,7 @@ const sampleBrainrots: Brainrot[] = [
     createdAt: new Date(),
     stats: { wins: 0, losses: 0, totalBattles: 0 },
     elo: 1000,
+    riskLevel: 1, // 낮은 위험도
   },
 ];
 
@@ -55,11 +58,24 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [selectedBrainrot, setSelectedBrainrot] = useState<Brainrot | null>(null);
   const [opponentBrainrot, setOpponentBrainrot] = useState<Brainrot | null>(null);
   const [battleResult, setBattleResult] = useState<Brainrot | null>(null);
+  const [currentBattle, setCurrentBattle] = useState<Battle | null>(null); // 현재 배틀 정보
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Supabase 형식의 객체를 Brainrot 타입으로 변환
-  const convertToBrainrot = (data: any): Brainrot => ({
+  const convertToBrainrot = (data: {
+    id: string;
+    user_id: string;
+    name: string;
+    description?: string;
+    image_url?: string;
+    created_at: string;
+    elo?: number;
+    wins?: number;
+    losses?: number;
+    total_battles?: number;
+    risk_level?: number;
+  }): Brainrot => ({
     id: data.id,
     userId: data.user_id,
     name: data.name,
@@ -67,6 +83,7 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     imageUrl: data.image_url || '',
     createdAt: new Date(data.created_at),
     elo: data.elo || 1000,
+    riskLevel: data.risk_level || 1,
     stats: {
       wins: data.wins || 0,
       losses: data.losses || 0,
@@ -74,12 +91,122 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
-  // 샘플 브레인롯 로드 함수
-  const loadSampleBrainrots = () => {
-    setBrainrots(sampleBrainrots);
-    // Optionally save to local storage if needed for fallback
-    // localStorage.setItem(BRAINROTS_STORAGE_KEY, JSON.stringify(sampleBrainrots));
-  };
+  // 사용자 상태가 변경되면 데이터를 다시 로드합니다.
+  useEffect(() => {
+    // fetchBrainrots 함수를 useEffect 내부에 선언하여 종속성 문제 해결
+    const fetchBrainrots = async () => {
+      // 이미 로딩 중이면 중복 요청 방지
+      if (isLoading) return;
+      
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        // 브레인롯 데이터 로드
+        const { data: brainrotsData, error: brainrotsError } = await supabase
+          .from('brainrots')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        let fetchedBrainrots: Brainrot[] = [];
+        if (brainrotsError) {
+          console.error('브레인롯 조회 실패:', brainrotsError);
+          // 로컬 스토리지 폴백 시도 (필요한 경우)
+          const localData = localStorage.getItem(BRAINROTS_STORAGE_KEY);
+          if (localData) {
+            try {
+              fetchedBrainrots = JSON.parse(localData);
+              console.warn('Supabase 조회 실패, 로컬 데이터 사용');
+            } catch (parseError) {
+              console.error('로컬 데이터 파싱 실패:', parseError);
+              setBrainrots(sampleBrainrots); // 샘플 데이터 직접 설정
+              console.warn('Supabase 및 로컬 데이터 조회 실패, 샘플 데이터 사용');
+              
+              // 배틀 데이터 로드 건너뛰기
+              setIsLoading(false);
+              return;
+            }
+          } else {
+            setBrainrots(sampleBrainrots); // 샘플 데이터 직접 설정
+            console.warn('Supabase 및 로컬 데이터 조회 실패, 샘플 데이터 사용');
+            
+            // 배틀 데이터 로드 건너뛰기
+            setIsLoading(false);
+            return;
+          }
+        } else if (brainrotsData && brainrotsData.length > 0) {
+          fetchedBrainrots = brainrotsData.map(convertToBrainrot);
+        } else {
+          setBrainrots(sampleBrainrots); // 샘플 데이터 직접 설정
+          console.warn('Supabase 데이터가 비어있어 샘플 데이터를 사용합니다.');
+          
+          // 배틀 데이터 로드 건너뛰기
+          setIsLoading(false);
+          return;
+        }
+        setBrainrots(fetchedBrainrots); // Set brainrots state correctly
+
+        // 배틀 기록 로드 (로그인 상태일 때만)
+        if (user) {
+          try {
+            const { data: battlesData, error: battlesError } = await supabase
+              .from('battles')
+              .select('*')
+              .order('created_at', { ascending: false })
+              .limit(50); // Limit results
+
+            if (battlesError) {
+              console.error('배틀 기록 조회 실패:', battlesError);
+              setBattles([]); // Clear or handle battle state on error
+            } else {
+              // Map fetched battle data (snake_case) to Battle interface (camelCase)
+              const mappedBattles = battlesData.map((battle: {
+                id: string;
+                player_brainrot_id: string;
+                opponent_brainrot_id: string;
+                winner_id: string | null;
+                battle_result?: string;
+                battle_narrative?: string;
+                created_at: string;
+              }): Battle => ({
+                id: battle.id, // UUID가 문자열로 반환됨
+                playerBrainrotId: battle.player_brainrot_id,
+                opponentBrainrotId: battle.opponent_brainrot_id,
+                winnerId: battle.winner_id,
+                battleResult: battle.battle_result as 'WIN' | 'LOSS' | 'DRAW' | undefined,
+                battleNarrative: battle.battle_narrative,
+                createdAt: new Date(battle.created_at),
+                playerBrainrot: fetchedBrainrots.find(b => b.id === battle.player_brainrot_id),
+                opponentBrainrot: fetchedBrainrots.find(b => b.id === battle.opponent_brainrot_id),
+                // 승패 결과 계산
+                isPlayerWon: battle.battle_result === 'WIN',
+                isDraw: battle.battle_result === 'DRAW'
+              }));
+              setBattles(mappedBattles); // Set battles state correctly
+            }
+          } catch (battleError) {
+            console.error('배틀 데이터 로딩 중 예외 발생:', battleError);
+            setBattles([]);
+          }
+        }
+      } catch (error) {
+        console.error('브레인롯 또는 배틀 데이터 로딩 실패:', error);
+        setError('데이터 로딩 중 오류가 발생했습니다');
+        setBrainrots(sampleBrainrots); // 직접 샘플 데이터 설정
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchBrainrots();
+    
+    // 정리 함수 추가: 언마운트 시 실행되어 추가 요청 방지
+    return () => {
+      setIsLoading(false);
+    };
+    
+  // 종속성 배열에서 loadSampleBrainrots와 같은 함수 참조 제거, user?.user_id만 포함
+  }, [user?.user_id, user]);
 
   // 이미지 파일을 Supabase Storage에 업로드하는 함수
   const uploadBrainrotImage = async (file: File): Promise<string> => {
@@ -103,7 +230,7 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     
     try {
       // 이미지 업로드
-      const { error: uploadError, data } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from(BRAINROT_IMAGES_BUCKET)
         .upload(fileName, file);
       
@@ -128,77 +255,6 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  // 사용자 상태가 변경되면 데이터를 다시 로드합니다.
-  useEffect(() => {
-    const fetchBrainrots = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        // 브레인롯 데이터 로드
-        const { data: brainrotsData, error: brainrotsError } = await supabase
-          .from('brainrots')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        let fetchedBrainrots: Brainrot[] = [];
-        if (brainrotsError) {
-          console.error('브레인롯 조회 실패:', brainrotsError);
-          // 로컬 스토리지 폴백 시도 (필요한 경우)
-          const localData = localStorage.getItem(BRAINROTS_STORAGE_KEY);
-          if (localData) {
-            fetchedBrainrots = JSON.parse(localData).map(convertToBrainrot);
-            console.warn('Supabase 조회 실패, 로컬 데이터 사용');
-          } else {
-            loadSampleBrainrots(); // 샘플 데이터 로드
-            console.warn('Supabase 및 로컬 데이터 조회 실패, 샘플 데이터 사용');
-          }
-        } else if (brainrotsData && brainrotsData.length > 0) {
-          fetchedBrainrots = brainrotsData.map(convertToBrainrot);
-        } else {
-          loadSampleBrainrots(); // 데이터 없을 시 샘플 로드
-          console.warn('Supabase 데이터가 비어있어 샘플 데이터를 사용합니다.');
-        }
-        setBrainrots(fetchedBrainrots); // Set brainrots state correctly
-
-        // 배틀 기록 로드 (로그인 상태일 때만)
-        if (user) {
-          const { data: battlesData, error: battlesError } = await supabase
-            .from('battles')
-            .select('*')
-            // TODO: Add filter if needed, e.g., fetch only battles related to user's brainrots
-            .order('created_at', { ascending: false })
-            .limit(50); // Limit results
-
-          if (battlesError) {
-            console.error('배틀 기록 조회 실패:', battlesError);
-            setBattles([]); // Clear or handle battle state on error
-          } else {
-            // Map fetched battle data (snake_case) to Battle interface (camelCase)
-            const mappedBattles = battlesData.map((battle: any): Battle => ({
-              id: battle.id,
-              playerBrainrotId: battle.player_brainrot_id,
-              opponentBrainrotId: battle.opponent_brainrot_id,
-              winnerId: battle.winner_id,
-              createdAt: new Date(battle.created_at),
-              // Find corresponding Brainrot objects from the already fetched list
-              playerBrainrot: fetchedBrainrots.find(b => b.id === battle.player_brainrot_id),
-              opponentBrainrot: fetchedBrainrots.find(b => b.id === battle.opponent_brainrot_id),
-            }));
-            setBattles(mappedBattles); // Set battles state correctly
-          }
-        }
-      } catch (error) {
-        console.error('브레인롯 또는 배틀 데이터 로딩 실패:', error);
-        setError('데이터 로딩 중 오류가 발생했습니다');
-        loadSampleBrainrots(); // Fallback to sample data on generic error
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchBrainrots();
-  }, [user?.user_id]); // Dependency on text user_id
-
   // 브레인롯 생성 함수
   const createBrainrot = async (brainrotData: Omit<Brainrot, 'id' | 'userId' | 'createdAt' | 'stats'>) => {
     setIsLoading(true);
@@ -209,47 +265,35 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         throw new Error('로그인 상태가 아니거나 사용자 프로필 ID가 없습니다');
       }
 
-      // 기본 통계 설정
-      const initialStats = {
-        wins: 0,
-        losses: 0,
-        totalBattles: 0
-      };
-
-      // Supabase에 삽입할 데이터 준비 (user_id는 profiles.user_id 사용)
-      const newBrainrotData = {
-        ...brainrotData,
-        user_id: user.user_id, 
-        created_at: new Date().toISOString(),
-        elo: 1000, 
-        wins: initialStats.wins,
-        losses: initialStats.losses,
-        total_battles: initialStats.totalBattles
-      };
-
-      // Supabase에 데이터 삽입
-      const { data: insertedData, error } = await supabase
-        .from('brainrots')
-        .insert(newBrainrotData)
-        .select()
-        .single(); 
+      // Supabase 데이터베이스 함수 호출
+      const { data: createdBrainrot, error } = await supabase.rpc(
+        'create_brainrot',
+        {
+          p_name: brainrotData.name,
+          p_description: brainrotData.description,
+          p_image_url: brainrotData.imageUrl || '',
+          p_user_id: user.user_id
+          // risk_level은 서버에서 항상 1로 설정
+        }
+      );
 
       if (error) {
         console.error('브레인롯 생성 오류:', error);
         throw new Error('브레인롯 생성 중 오류가 발생했습니다');
       }
 
-      if (!insertedData) {
+      if (!createdBrainrot) {
         throw new Error('브레인롯 생성 후 데이터를 받지 못했습니다.');
       }
 
-      // 로컬 상태 업데이트 (DB에서 반환된 값 사용)
-      const newBrainrot = convertToBrainrot(insertedData);
+      // 반환된 데이터를 Brainrot 형식으로 변환
+      const newBrainrot = convertToBrainrot(createdBrainrot);
+      
+      // 로컬 상태 업데이트
       const updatedBrainrots = [...brainrots, newBrainrot];
       setBrainrots(updatedBrainrots);
-
-      // 로컬 스토리지 업데이트 (선택적, DB 우선)
-      // localStorage.setItem(BRAINROTS_STORAGE_KEY, JSON.stringify(updatedBrainrots));
+      
+      console.log('브레인롯이 성공적으로 생성되었습니다:', newBrainrot);
 
     } catch (err) {
       console.error('브레인롯 생성 실패:', err);
@@ -273,6 +317,13 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsLoading(true);
     
     try {
+      if (!selectedBrainrot) {
+        throw new Error('선택한 브레인롯이 없습니다. 먼저 브레인롯을 선택해주세요.');
+      }
+
+      // 현재 브레인롯의 ELO 점수
+      const playerElo = selectedBrainrot.elo || 1000;
+      
       // 1. 사용자의 브레인롯을 제외한 다른 사용자의 브레인롯 찾기
       const otherUserBrainrots = brainrots.filter(b => user && b.userId !== user.user_id);
       
@@ -280,7 +331,7 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (otherUserBrainrots.length === 0) {
         console.log('대결 가능한 상대가 없어 샘플 브레인롯을 생성합니다.');
         
-        // 샘플 브레인롯 생성
+        // 샘플 브레인롯 생성 - 플레이어 ELO 기준으로 비슷한 ELO 값을 가지도록 설정
         const sampleBrainrots: Brainrot[] = [
           {
             id: uuidv4(),
@@ -290,7 +341,8 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             imageUrl: 'https://images.pexels.com/photos/7809122/pexels-photo-7809122.jpeg?auto=compress&cs=tinysrgb&w=800',
             createdAt: new Date(),
             stats: { wins: 5, losses: 2, totalBattles: 7 },
-            elo: 1050,
+            elo: playerElo + Math.floor(Math.random() * 100) - 50, // 플레이어 ELO의 ±50 범위
+            riskLevel: 3, // 높은 위험도
           },
           {
             id: uuidv4(),
@@ -300,7 +352,8 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             imageUrl: 'https://images.pexels.com/photos/6665327/pexels-photo-6665327.jpeg?auto=compress&cs=tinysrgb&w=800',
             createdAt: new Date(),
             stats: { wins: 3, losses: 1, totalBattles: 4 },
-            elo: 1030,
+            elo: playerElo + Math.floor(Math.random() * 150) - 75, // 플레이어 ELO의 ±75 범위
+            riskLevel: 2, // 중간 위험도
           },
           {
             id: uuidv4(),
@@ -310,7 +363,8 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             imageUrl: 'https://images.pexels.com/photos/5435304/pexels-photo-5435304.jpeg?auto=compress&cs=tinysrgb&w=800',
             createdAt: new Date(),
             stats: { wins: 2, losses: 2, totalBattles: 4 },
-            elo: 1010,
+            elo: playerElo + Math.floor(Math.random() * 200) - 100, // 플레이어 ELO의 ±100 범위
+            riskLevel: 1, // 낮은 위험도
           },
         ];
         
@@ -322,12 +376,31 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const updatedBrainrots = [...brainrots, ...sampleBrainrots];
         setBrainrots(updatedBrainrots);
         
+        // 선택된 샘플 브레인롯에 대한 로그
+        console.log('선택된 샘플 브레인롯:', selectedSampleBrainrot.name);
+        console.log('플레이어 ELO:', playerElo, '상대방 ELO:', selectedSampleBrainrot.elo);
+        
         // 선택된 샘플 브레인롯을 상대로 설정
         setOpponentBrainrot(selectedSampleBrainrot);
       } else {
-        // 다른 사용자의 브레인롯이 있으면 랜덤으로 선택
-        const randomIndex = Math.floor(Math.random() * otherUserBrainrots.length);
-        setOpponentBrainrot(otherUserBrainrots[randomIndex]);
+        // ELO 점수 차이를 기준으로 정렬 (차이가 적은 순으로)
+        const sortedByEloDiff = [...otherUserBrainrots].sort((a, b) => {
+          const aEloDiff = Math.abs((a.elo || 1000) - playerElo);
+          const bEloDiff = Math.abs((b.elo || 1000) - playerElo);
+          return aEloDiff - bEloDiff;
+        });
+        
+        // ELO 차이가 가장 적은 상위 N개 중에서 랜덤 선택 (ELO가 비슷한 상대만 선택하되 다양성 유지)
+        const topSimilarEloCount = Math.min(3, sortedByEloDiff.length);
+        const randomIndex = Math.floor(Math.random() * topSimilarEloCount);
+        const selectedOpponent = sortedByEloDiff[randomIndex];
+        
+        // 선택된 상대방에 대한 로그
+        console.log('선택된 상대방:', selectedOpponent.name);
+        console.log('플레이어 ELO:', playerElo, '상대방 ELO:', selectedOpponent.elo);
+        console.log('ELO 차이:', Math.abs((selectedOpponent.elo || 1000) - playerElo));
+        
+        setOpponentBrainrot(selectedOpponent);
       }
     } catch (err) {
       if (err instanceof Error) {
@@ -365,6 +438,10 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsLoading(true);
     
     try {
+      // 전투 시작 전 ELO 점수 저장
+      const playerStartElo = selectedBrainrot.elo;
+      const opponentStartElo = opponentBrainrot.elo;
+      
       // Supabase RPC 호출을 사용하여 서버 측에서 배틀 처리
       const { data: battleResultData, error } = await supabase.rpc('process_battle', {
         player_brainrot_id: selectedBrainrot.id,
@@ -378,7 +455,16 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return;
       }
       
-      const { battle_id, winner_id, has_player_won } = battleResultData;
+      const { 
+        battle_id, 
+        battle_result, 
+        battle_narrative
+      } = battleResultData;
+      
+      // 승자 ID 결정 (DB에서 받지 않고 클라이언트에서 계산)
+      const winner_id = battle_result === 'WIN' 
+        ? selectedBrainrot.id 
+        : (battle_result === 'LOSS' ? opponentBrainrot.id : null);
       
       // 업데이트된 브레인롯 정보 가져오기
       const [playerResult, opponentResult] = await Promise.all([
@@ -397,12 +483,20 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const updatedPlayerBrainrot = convertToBrainrot(playerResult.data);
         const updatedOpponentBrainrot = convertToBrainrot(opponentResult.data);
         
+        // 전투 후 ELO 점수 저장
+        const playerEndElo = updatedPlayerBrainrot.elo;
+        const opponentEndElo = updatedOpponentBrainrot.elo;
+        
         // 상태 업데이트
         setSelectedBrainrot(updatedPlayerBrainrot);
         setOpponentBrainrot(updatedOpponentBrainrot);
-        setBattleResult(has_player_won ? updatedPlayerBrainrot : updatedOpponentBrainrot);
         
-        // 배틀 내역 추가
+        // 배틀 결과에 따라 승자 브레인롯 설정
+        const isPlayerWon = battle_result === 'WIN';
+        const isDraw = battle_result === 'DRAW';
+        setBattleResult(isPlayerWon ? updatedPlayerBrainrot : (isDraw ? null : updatedOpponentBrainrot));
+        
+        // 배틀 내역 생성
         const newBattle: Battle = {
           id: battle_id,
           playerBrainrotId: selectedBrainrot.id,
@@ -410,13 +504,28 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           winnerId: winner_id,
           createdAt: new Date(),
           playerBrainrot: updatedPlayerBrainrot,
-          opponentBrainrot: updatedOpponentBrainrot
+          opponentBrainrot: updatedOpponentBrainrot,
+          battleResult: battle_result,
+          battleNarrative: battle_narrative,
+          isPlayerWon: isPlayerWon,
+          isDraw: isDraw,
+          playerStartElo: playerStartElo,
+          playerEndElo: playerEndElo,
+          opponentStartElo: opponentStartElo,
+          opponentEndElo: opponentEndElo
         };
         
+        setCurrentBattle(newBattle);
         setBattles(prevBattles => [newBattle, ...prevBattles]);
         
         // 로컬 스토리지에도 저장 (폴백)
         localStorage.setItem(BATTLES_STORAGE_KEY, JSON.stringify([newBattle, ...battles]));
+        
+        console.log('배틀 ID:', battle_id);
+        console.log('배틀 결과:', battle_result);
+        console.log('배틀 서사:', battle_narrative);
+        console.log('플레이어 ELO 변화:', playerStartElo, '->', playerEndElo, '(변화량:', playerEndElo - playerStartElo, ')');
+        console.log('상대방 ELO 변화:', opponentStartElo, '->', opponentEndElo, '(변화량:', opponentEndElo - opponentStartElo, ')');
       }
       
     } catch (error) {
@@ -431,6 +540,7 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const resetBattle = async () => {
     setOpponentBrainrot(null);
     setBattleResult(null);
+    setCurrentBattle(null); // 현재 배틀 정보 초기화
     
     // 최신 브레인롯 데이터 다시 로드
     try {
@@ -453,6 +563,7 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             imageUrl: data.image_url || '',
             createdAt: new Date(data.created_at),
             elo: data.elo || 1000,
+            riskLevel: data.risk_level || 1,
             stats: {
               wins: data.wins || 0,
               losses: data.losses || 0,
@@ -576,16 +687,32 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       // Supabase 데이터 형식으로 변환
-      const dataToUpdate: any = {};
+      const dataToUpdate: {
+        name?: string;
+        description?: string;
+        image_url?: string;
+        elo?: number;
+        wins?: number;
+        losses?: number;
+        total_battles?: number;
+        risk_level?: number;
+      } = {};
+      
+      // 필드 매핑 (클라이언트 camelCase -> 서버 snake_case)
       if (updatedData.name) dataToUpdate.name = updatedData.name;
       if (updatedData.description) dataToUpdate.description = updatedData.description;
+      
+      // imageUrl은 image_url로 변환해서 저장
       if (updatedData.imageUrl) dataToUpdate.image_url = updatedData.imageUrl;
+      
       if (updatedData.elo) dataToUpdate.elo = updatedData.elo;
       if (updatedData.stats) {
         dataToUpdate.wins = updatedData.stats.wins;
         dataToUpdate.losses = updatedData.stats.losses;
         dataToUpdate.total_battles = updatedData.stats.totalBattles;
       }
+      
+      if (updatedData.riskLevel) dataToUpdate.risk_level = updatedData.riskLevel;
       
       // Supabase 업데이트
       const { error } = await supabase
@@ -632,10 +759,11 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     <BrainrotContext.Provider
       value={{
         brainrots,
-        userBrainrots: user && user.user_id ? brainrots.filter(brainrot => brainrot.userId === user.user_id) : [],
+        userBrainrots: user ? brainrots.filter(b => b.userId === user.user_id) : [],
         selectedBrainrot,
         opponentBrainrot,
         battleResult,
+        currentBattle, // 현재 배틀 정보 추가
         battles,
         isLoading,
         error,

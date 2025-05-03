@@ -10,7 +10,7 @@ const BattleDetailPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { battleId } = useParams<{ battleId: string }>();
-  const { battles, brainrots } = useBrainrots();
+  const { battles, brainrots } = useBrainrots()!;
   const [battle, setBattle] = useState<Battle | null>(null);
   const [playerBrainrot, setPlayerBrainrot] = useState<Brainrot | null>(null);
   const [opponentBrainrot, setOpponentBrainrot] = useState<Brainrot | null>(null);
@@ -22,7 +22,7 @@ const BattleDetailPage: React.FC = () => {
       return;
     }
 
-    const foundBattle = battles.find(b => b.id === battleId);
+    const foundBattle = battles.find((b: Battle) => b.id === battleId);
     if (!foundBattle) {
       navigate('/');
       return;
@@ -31,16 +31,20 @@ const BattleDetailPage: React.FC = () => {
     setBattle(foundBattle);
     
     // 플레이어 브레인롯 찾기
-    const player = brainrots.find(c => c.id === foundBattle.playerBrainrotId);
+    const player = brainrots.find((c: Brainrot) => c.id === foundBattle.playerBrainrotId);
     setPlayerBrainrot(player || null);
     
     // 상대 브레인롯 찾기
-    const opponent = brainrots.find(c => c.id === foundBattle.opponentBrainrotId);
+    const opponent = brainrots.find((c: Brainrot) => c.id === foundBattle.opponentBrainrotId);
     setOpponentBrainrot(opponent || null);
     
     // 승자 브레인롯 찾기
-    const winnerBrainrot = brainrots.find(c => c.id === foundBattle.winnerId);
-    setWinner(winnerBrainrot || null);
+    if (foundBattle.winnerId) {
+      const winnerBrainrot = brainrots.find((c: Brainrot) => c.id === foundBattle.winnerId);
+      setWinner(winnerBrainrot || null);
+    } else {
+      setWinner(null);
+    }
   }, [battleId, battles, brainrots, navigate]);
 
   if (!battle || !playerBrainrot || !opponentBrainrot) {
@@ -51,7 +55,8 @@ const BattleDetailPage: React.FC = () => {
     );
   }
 
-  const isPlayerWinner = battle.winnerId === playerBrainrot.id;
+  const isPlayerWinner = battle.battleResult === 'WIN';
+  const isDraw = battle.battleResult === 'DRAW';
   const battleDate = battle.createdAt instanceof Date 
     ? battle.createdAt.toLocaleString() 
     : new Date(battle.createdAt).toLocaleString();
@@ -71,22 +76,35 @@ const BattleDetailPage: React.FC = () => {
         <h1 className="text-2xl font-bold text-white mb-1">{t('resultPage.title')}</h1>
         <p className="text-base text-gray-300">
           {battleDate}
+          <span className="ml-2 text-gray-500">#{battle.id.substring(0, 6)}</span>
         </p>
       </div>
 
       {/* 결과 표시 */}
       <div className="relative text-center mb-8">
         <div className="inline-block">
-          <div className={`flex items-center justify-center rounded-full p-3 h-14 w-14 mx-auto border-2 ${isPlayerWinner ? 'bg-primary-600 border-primary-400' : 'bg-accent-600 border-accent-400'}`}>
+          <div className={`flex items-center justify-center rounded-full p-3 h-14 w-14 mx-auto border-2 ${
+            isDraw ? 'bg-yellow-600 border-yellow-400' : 
+            isPlayerWinner ? 'bg-primary-600 border-primary-400' : 
+            'bg-accent-600 border-accent-400'
+          }`}>
             <Trophy size={24} className="text-white" />
           </div>
         </div>
         
         <h2 className="text-xl font-bold text-white mt-2 mb-1">
-          {isPlayerWinner ? t('resultPage.congratulations') : t('resultPage.defeated')}
+          {isDraw 
+            ? t('resultPage.draw') 
+            : isPlayerWinner 
+              ? t('resultPage.congratulations') 
+              : t('resultPage.defeated')
+          }
         </h2>
         <p className="text-lg text-accent-400 font-bold">
-          {t('resultPage.victorious', { name: winner?.name || '' })}
+          {isDraw 
+            ? t('resultPage.drawResult') 
+            : t('resultPage.victorious', { name: winner?.name || '' })
+          }
         </p>
       </div>
 
@@ -98,7 +116,7 @@ const BattleDetailPage: React.FC = () => {
             <h2 className="text-xl font-semibold text-primary-400 mb-3">{t('resultPage.yourBrainrot')}</h2>
             <div className={`bg-gaming-dark rounded-xl p-4 border-2 ${isPlayerWinner ? 'border-primary-500 shadow-md shadow-primary-500/20' : 'border-gray-700'} transition-all`}>
               <div className="relative">
-                {isPlayerWinner && (
+                {isPlayerWinner && !isDraw && (
                   <div className="absolute -top-3 -right-3 z-10">
                     <div className="bg-primary-500 text-white p-1 rounded-full border-2 border-primary-700">
                       <Trophy size={24} />
@@ -138,9 +156,9 @@ const BattleDetailPage: React.FC = () => {
         <div className="flex justify-center md:justify-start">
           <div className="text-center w-full max-w-md">
             <h2 className="text-xl font-semibold text-accent-400 mb-3">{t('resultPage.opponent')}</h2>
-            <div className={`bg-gaming-dark rounded-xl p-4 border-2 ${!isPlayerWinner ? 'border-accent-500 shadow-md shadow-accent-500/20' : 'border-gray-700'} transition-all`}>
+            <div className={`bg-gaming-dark rounded-xl p-4 border-2 ${battle.battleResult === 'LOSS' ? 'border-accent-500 shadow-md shadow-accent-500/20' : 'border-gray-700'} transition-all`}>
               <div className="relative">
-                {!isPlayerWinner && (
+                {battle.battleResult === 'LOSS' && !isDraw && (
                   <div className="absolute -top-3 -right-3 z-10">
                     <div className="bg-accent-500 text-white p-1 rounded-full border-2 border-accent-700">
                       <Trophy size={24} />

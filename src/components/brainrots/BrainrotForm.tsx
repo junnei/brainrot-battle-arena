@@ -1,12 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import Button from '../ui/Button';
-import { useBrainrots } from '../../context/BrainrotContext';
-import { Upload, X, Check, Image as ImageIcon } from 'lucide-react';
+import { Upload, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Brainrot } from '../../types';
+import { useBrainrots } from '../../context/BrainrotContext';
+
+interface BrainrotFormData {
+  name: string;
+  description: string;
+  imageUrl: string;
+  id?: string;
+  elo?: number;
+  riskLevel?: number;
+}
 
 interface FormErrors {
   name?: string;
@@ -15,19 +23,18 @@ interface FormErrors {
 }
 
 interface BrainrotFormProps {
-  onSubmit: (data: any) => void;
-  initialData?: Brainrot;
+  onSubmit: (data: BrainrotFormData) => void;
+  initialData?: Partial<BrainrotFormData>;
 }
 
 const BrainrotForm: React.FC<BrainrotFormProps> = ({ onSubmit, initialData }) => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   
   const [name, setName] = useState(initialData?.name || '');
   const [description, setDescription] = useState(initialData?.description || '');
   const [imageUrl, setImageUrl] = useState(initialData?.imageUrl || '');
   const [imagePreview, setImagePreview] = useState(initialData?.imageUrl || '');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [, setSelectedFile] = useState<File | null>(null); // selectedFile은 사용하지 않지만 setter는 필요함
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -40,10 +47,10 @@ const BrainrotForm: React.FC<BrainrotFormProps> = ({ onSubmit, initialData }) =>
   // Update form when initialData changes
   useEffect(() => {
     if (initialData) {
-      setName(initialData.name);
-      setDescription(initialData.description);
-      setImageUrl(initialData.imageUrl);
-      setImagePreview(initialData.imageUrl);
+      setName(initialData.name || '');
+      setDescription(initialData.description || '');
+      setImageUrl(initialData.imageUrl || '');
+      setImagePreview(initialData.imageUrl || '');
     }
   }, [initialData]);
 

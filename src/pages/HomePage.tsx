@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Swords, Users, ChevronRight, X, Pencil, ArrowLeft, Clock, Award, Shield, BarChart2, Plus, Star, BookOpen, UserPlus, ChevronDown, ChevronUp, Trash2, Edit, FileQuestion, AlertCircle, LockIcon } from 'lucide-react';
+import { Swords, Users, ChevronRight, X, Pencil, ArrowLeft, Clock, Award, Shield, BarChart2, Plus, BookOpen, UserPlus, ChevronDown, ChevronUp, Trash2, AlertCircle } from 'lucide-react';
 import Button from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useBrainrots } from '../context/BrainrotContext';
-import BrainrotCard from '../components/brainrots/BrainrotCard';
 import { useTranslation } from 'react-i18next';
 import Input from '../components/ui/Input';
 import Textarea from '../components/ui/Textarea';
@@ -28,6 +27,9 @@ const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, user } = useAuth();
+  const brainrotContext = useBrainrots();
+  
+  // context가 undefined일 수 없다고 TypeScript에 알려줍니다
   const { 
     userBrainrots, 
     setBrainrots,
@@ -38,12 +40,12 @@ const HomePage: React.FC = () => {
     getUserBattles,
     isLoading,
     updateBrainrot,
-    battles
-  } = useBrainrots();
+    battles,
+    getBrainrotBattles
+  } = brainrotContext!;
 
   const [isStarted, setIsStarted] = useState<boolean>(getInitialStartedState);
   const [showBrainrots, setShowBrainrots] = useState<boolean>(getInitialStartedState);
-  const [openDetailId, setOpenDetailId] = useState<string | null>(null);
   const [selectedBrainrotId, setSelectedBrainrotId] = useState<string | null>(null);
 
   // 편집 상태 관리
@@ -94,7 +96,7 @@ const HomePage: React.FC = () => {
       // 상태를 사용했으므로 제거 (뒤로 가기 등으로 다시 트리거되지 않도록)
       navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location.state, navigate, isStarted]);
+  }, [location.state, navigate, isStarted, location.pathname]);
 
   // 전투 완료 후 브레인롯 데이터 새로고침 (선택적)
   // location.state에 battleCompleted 등이 올 수 있으므로 fromCancel과 분리
@@ -123,7 +125,7 @@ const HomePage: React.FC = () => {
     setSelectedBrainrotId(id);
     setIsEditing(false); // 상세 보기 열 때 편집 모드 비활성화
     setEditError(null);
-    const brainrot = userBrainrots.find(c => c.id === id);
+    const brainrot = userBrainrots.find((c: {id: string}) => c.id === id);
     if (brainrot) {
       setEditedName(brainrot.name);
       setEditedDescription(brainrot.description);
@@ -138,7 +140,7 @@ const HomePage: React.FC = () => {
 
   // 수정 시작
   const handleEditClick = () => {
-    const brainrot = userBrainrots.find(c => c.id === selectedBrainrotId);
+    const brainrot = userBrainrots.find((c: {id: string}) => c.id === selectedBrainrotId);
     if (brainrot) {
       setEditedName(brainrot.name);
       setEditedDescription(brainrot.description);
@@ -157,7 +159,7 @@ const HomePage: React.FC = () => {
   // 수정 저장
   const handleSaveEdit = async () => {
     if (!selectedBrainrotId) return;
-    const brainrot = userBrainrots.find(c => c.id === selectedBrainrotId);
+    const brainrot = userBrainrots.find((c: {id: string}) => c.id === selectedBrainrotId);
     if (!brainrot) return;
 
     // 유효성 검사 (간단하게)
@@ -181,11 +183,6 @@ const HomePage: React.FC = () => {
 
   const canCreate = userBrainrots.length < 5;
 
-  // 아바타 문자 생성 (이니셜)
-  const getInitials = (name: string) => {
-    return name.charAt(0).toUpperCase();
-  };
-
   // 배틀 내역 클릭 핸들러 수정
   const handleBattleClick = (battle: Battle) => {
     setExpandedBattleIds(prev => {
@@ -202,9 +199,15 @@ const HomePage: React.FC = () => {
     navigate('/battle');
   };
 
-  const handleCreateBrainrot = async (data: any) => {
+  const handleCreateBrainrot = async (data: {name: string; description: string; imageUrl: string}) => {
     try {
-      await createBrainrot(data);
+      // elo 및 riskLevel 값 기본값 추가
+      const brainrotData = {
+        ...data,
+        elo: 1000, // 기본값 설정
+        riskLevel: 1 // 기본 위험도 설정
+      };
+      await createBrainrot(brainrotData);
       setNewBrainrotModalOpen(false);
       toast.success(t('homePage.brainrotCreated'));
     } catch (error) {
@@ -223,20 +226,7 @@ const HomePage: React.FC = () => {
     }
   };
 
-  const handleUpdateBrainrot = async (data: any) => {
-    try {
-      if (selectedBrainrotId) {
-        await updateBrainrot(selectedBrainrotId, data);
-        setIsEditing(false);
-        console.log(t('homePage.brainrotUpdated'));
-        // toast.success(t('homePage.brainrotUpdated'));
-      }
-    } catch (error) {
-      console.error('브레인롯 업데이트 오류:', error);
-      console.log(t('homePage.brainrotUpdateError'));
-      // toast.error(t('homePage.brainrotUpdateError'));
-    }
-  };
+
 
   const handleChallengeBrainrot = (brainrotId: string) => {
     // 먼저 현재 사용자의 브레인롯 중 첫 번째를 선택
@@ -298,9 +288,9 @@ const HomePage: React.FC = () => {
         {/* 캐릭터 상세 페이지 */}
         {showBrainrots && selectedBrainrotId ? (
           (() => {
-            const brainrot = userBrainrots.find(c => c.id === selectedBrainrotId);
+            const brainrot = userBrainrots.find((c: {id: string}) => c.id === selectedBrainrotId);
             if (!brainrot) return null;
-            const battles = getUserBattles(brainrot.id);
+            const brainrotBattles = getBrainrotBattles(brainrot.id);
             const stats = brainrot.stats || { wins: 0, losses: 0, totalBattles: 0 };
             const { wins, losses } = stats;
             return (
@@ -390,7 +380,10 @@ const HomePage: React.FC = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-col mb-3">
-                          <span className="text-2xl font-bold text-white mb-1">{brainrot.name}</span>
+                          <div className="flex items-center mb-1">
+                            <span className="text-2xl font-bold text-white">{brainrot.name}</span>
+                            <span className="ml-2 text-sm text-gray-400 font-mono">#{brainrot.id.toUpperCase()}</span>
+                          </div>
                           <div className="flex items-center gap-4 mb-2">
                             <span className="flex items-center gap-1.5 text-primary-400 font-medium">
                               <Shield size={14} />
@@ -409,8 +402,16 @@ const HomePage: React.FC = () => {
                           <div className="absolute bottom-6 right-6">
                             <Button 
                               variant="accent" 
-                              onClick={() => { selectBrainrot(brainrot.id); navigate('/battle'); }} 
-                              disabled={isLoading}
+                              onClick={() => { 
+                                // 먼저 선택 후 로컬 스토리지에 저장하고 페이지 전환
+                                selectBrainrot(brainrot.id);
+                                // 디버깅용 로그 추가
+                                console.log('선택된 브레인롯:', brainrot);
+                                // 로컬 스토리지에 선택된 브레인롯 ID 저장
+                                localStorage.setItem('selectedBrainrotId', brainrot.id);
+                                // 약간의 지연 후 페이지 이동 (상태가 업데이트될 시간을 줌)
+                                setTimeout(() => navigate('/battle'), 100);
+                              }} 
                               className="px-4 py-2 rounded-full shadow-md"
                             >
                               <Swords size={18} className="mr-2" />
@@ -430,11 +431,11 @@ const HomePage: React.FC = () => {
                       <Clock size={18} className="text-primary-400" />
                       <h3 className="text-lg font-bold text-white">{t('homePage.recentBattles')}</h3>
                     </div>
-                    {battles.length === 0 ? (
+                    {brainrotBattles.length === 0 ? (
                       <div className="text-gray-400 text-center py-4">{t('homePage.noBattles')}</div>
                     ) : (
                       <ul className="divide-y divide-gray-700/50">
-                        {battles.slice(0, 5).map((battle) => (
+                        {brainrotBattles.map((battle) => (
                           <li key={battle.id} className="py-2">
                             <div 
                               className="py-2 flex items-center justify-between hover:bg-gray-800/20 px-2 rounded-md transition-colors cursor-pointer"
@@ -446,6 +447,7 @@ const HomePage: React.FC = () => {
                                   <ChevronDown size={16} className="mr-2 text-gray-400" />
                                 }
                                 {battle.opponentBrainrot?.name || t('homePage.opponent')}
+                                <span className="text-xs text-gray-500 ml-2">#{battle.opponentBrainrot?.id.toUpperCase()}</span>
                               </span>
                               <div className="flex items-center gap-4">
                                 <span className={`font-semibold flex items-center ${battle.winnerId === brainrot.id ? 'text-green-400' : 'text-red-400'}`}>
@@ -469,7 +471,13 @@ const HomePage: React.FC = () => {
                             
                             {/* 확장된 배틀 상세 정보 */}
                             {expandedBattleIds.includes(battle.id) && (
-                              <div className="bg-gaming-dark/50 rounded-lg p-4 mb-2 mt-2 border border-gray-700/50 animate-fade-in">
+                              <div className="bg-gaming-dark/50 rounded-lg p-4 mb-2 mt-2 border border-gray-700/50 animate-fade-in relative">
+                                {/* 배틀 ID 태그 - 컨테이너와 겹치게 상단에 위치 */}
+                                <div className="absolute -top-3 right-3">
+                                  <span className="text-xs text-gray-500 bg-gaming-dark px-2 py-1 rounded-full border border-gray-700/50 shadow-sm">
+                                    #{battle.id.toUpperCase()}
+                                  </span>
+                                </div>
                                 <div className="grid grid-cols-2 gap-3 mb-3">
                                   {/* 플레이어 캐릭터 */}
                                   <div className="bg-gaming-card/30 rounded-lg p-2 border border-gray-700/30">
@@ -492,6 +500,7 @@ const HomePage: React.FC = () => {
                                       <div>
                                         <div className="font-bold text-white text-sm">
                                           {battle.playerBrainrot?.name}
+                                          <span className="text-xs text-gray-500 ml-1">#{battle.playerBrainrot?.id.toUpperCase()}</span>
                                         </div>
                                         <div className="text-xs text-gray-400">
                                           {t('common.elo')}: {battle.playerBrainrot?.elo || 1000}
@@ -521,6 +530,7 @@ const HomePage: React.FC = () => {
                                       <div>
                                         <div className="font-bold text-white text-sm">
                                           {battle.opponentBrainrot?.name}
+                                          <span className="text-xs text-gray-500 ml-1">#{battle.opponentBrainrot?.id.toUpperCase()}</span>
                                         </div>
                                         <div className="text-xs text-gray-400">
                                           {t('common.elo')}: {battle.opponentBrainrot?.elo || 1000}
@@ -531,7 +541,7 @@ const HomePage: React.FC = () => {
                                 </div>
                                 
                                 <div className="text-center">
-                                  <div className="inline-block px-3 py-1 rounded-full bg-gaming-card border border-gray-700 text-sm">
+                                  <div className="inline-block px-3 py-1 rounded-full bg-gaming-card border border-gray-700 text-sm mb-2">
                                     <span className="font-bold mr-1 text-white">
                                       {battle.winnerId === battle.playerBrainrotId 
                                         ? battle.playerBrainrot?.name 
@@ -712,12 +722,12 @@ const HomePage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            {recentBattles.map((battle) => {
-              const playerBrainrot = brainrots.find(b => b.id === battle.playerBrainrotId);
-              const opponentBrainrot = brainrots.find(b => b.id === battle.opponentBrainrotId);
-              const winner = brainrots.find(b => b.id === battle.winnerId);
+            {recentBattles.map((battle: Battle) => {
+              const playerBrainrot = brainrots.find((b: {id: string}) => b.id === battle.playerBrainrotId);
+              const opponentBrainrot = brainrots.find((b: {id: string}) => b.id === battle.opponentBrainrotId);
+              const winner = brainrots.find((b: {id: string}) => b.id === battle.winnerId);
               
-              if (!playerBrainrot || !opponentBrainrot || !winner) return null;
+              if (!playerBrainrot || !opponentBrainrot) return null;
               
               return (
                 <div key={battle.id} className="bg-gaming-card rounded-lg overflow-hidden border border-gray-700 hover:border-gray-600 transition-all p-4">
@@ -735,12 +745,15 @@ const HomePage: React.FC = () => {
                     <div className="flex flex-col items-center">
                       <span className="text-xs text-gray-400 mb-1">{formatDate(battle.createdAt)}</span>
                       <div className="bg-gaming-dark px-3 py-1 rounded-full text-xs font-bold">
-                        {winner.id === playerBrainrot.id ? (
+                        {battle.battleResult === 'WIN' ? (
                           <span className="text-green-400">WIN</span>
-                        ) : (
+                        ) : battle.battleResult === 'LOSS' ? (
                           <span className="text-red-400">LOSS</span>
+                        ) : (
+                          <span className="text-yellow-400">DRAW</span>
                         )}
                       </div>
+                      <span className="text-gray-500 text-xs mt-1">#{battle.id.substring(0, 6)}</span>
                     </div>
                     
                     <div className="flex items-center space-x-4">

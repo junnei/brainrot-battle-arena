@@ -64,15 +64,31 @@
     "battleInProgress": "배틀 진행 중...",
     "fighting": "브레인롯들이 서로 대결 중입니다!",
     "serverBattle": "서버에서 배틀을 처리하는 중입니다...",
-    "battleError": "배틀 중 오류가 발생했습니다. 다시 시도해 주세요."
+    "battleError": "배틀 중 오류가 발생했습니다. 다시 시도해 주세요.",
+    "fairMatch": "공정한 매치: ELO 점수 차이가 적습니다.",
+    "closeMatch": "균형 잡힌 매치: ELO 점수가 비슷합니다.",
+    "challengingMatch": "도전적인 매치: ELO 점수 차이가 큽니다."
   },
   "resultPage": {
     "title": "전투 결과",
     "congratulations": "축하합니다! 당신의 브레인롯이 전투에서 승리했습니다!",
     "defeated": "브레인롯이 용감하게 싸웠지만 패배했습니다.",
+    "draw": "브레인롯이 상대와 대등한 실력을 보여 무승부가 되었습니다!",
+    "drawResult": "무승부입니다!",
     "victorious": "{{name}} 승리!",
     "yourBrainrot": "내 브레인롯",
-    "opponent": "상대방"
+    "opponent": "상대방",
+    "battleNarrative": "전투 과정",
+    "battleResult": "전투 결과",
+    "wins": "승리",
+    "battles": "전투 횟수",
+    "drawTitle": "무승부",
+    "victoryTitle": "승리",
+    "drawMessage": "양쪽의 브레인롯이 동등한 실력을 보였습니다!",
+    "noBattleDescription": "전투 과정 설명이 없습니다.",
+    "totalBattles": "총 전투 횟수",
+    "winRate": "승률",
+    "losses": "패배"
   },
   "brainrotForm": {
     "nameLabel": "브레인롯 이름",
