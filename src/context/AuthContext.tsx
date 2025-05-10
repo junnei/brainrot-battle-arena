@@ -3,6 +3,16 @@ import { User, AuthContextType } from '../types';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { useTranslation } from 'react-i18next';
+import { getUserProfile, updateProfile } from '../lib/supabase-api';
+
+// 확장된 User 타입 (Edge Function 응답에 맞춤)
+interface ExtendedUser extends User {
+  profile?: {
+    id?: string;
+    user_id?: string;
+    nickname?: string;
+  }
+}
 
 // 개발 모드에서만 로깅
 const IS_DEV = import.meta.env.DEV;
@@ -38,7 +48,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // 초기 세션 체크 및 이벤트 구독
   useEffect(() => {
     let isMounted = true;
+    let initialSessionHandled = false; // 초기 세션 처리 여부 플래그
     setIsLoading(true); // Start loading
+    
+    // 세션 조회 함수
     supabase.auth.getSession().then(async ({ data: { session }, error }) => {
       if (!isMounted) return; // Exit if unmounted during async call
 
@@ -47,10 +60,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
         setIsLoading(false);
       } else if (session) {
-        console.log('[AuthContext] Initial session found, handling...');
+        if (IS_DEV) console.log('[AuthContext] Initial session found, handling...');
+        initialSessionHandled = true;
         await handleSessionChange(session); // Handles its own loading state changes
       } else {
-        console.log('[AuthContext] No initial session found.');
+        if (IS_DEV) console.log('[AuthContext] No initial session found.');
         setUser(null);
         setIsLoading(false);
       }
@@ -59,7 +73,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (event: string, session: Session | null) => {
           if (!isMounted) return;
-          console.log('[AuthContext] onAuthStateChange Event:', event);
+          if (IS_DEV) console.log('[AuthContext] onAuthStateChange Event:', event);
+
+          // INITIAL_SESSION은 getSession으로 이미 처리된 경우 무시
+          if (event === 'INITIAL_SESSION' && initialSessionHandled) {
+            return;
+          }
 
           if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
             const { data: { session: freshSession } } = await supabase.auth.getSession();
@@ -69,20 +88,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           // Handle sign out
           else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
-            console.log('[AuthContext] Signed out or user deleted.');
+            if (IS_DEV) console.log('[AuthContext] Signed out or user deleted.');
             setUser(null);
-            // isLoading should already be false from the previous state or handleSessionChange
-            // Avoid setting isLoading here unless necessary to prevent flickering?
-            // Let's assume previous state correctly set it.
           }
-          // Ignore INITIAL_SESSION here as it's handled by getSession()
         }
       );
 
       // Return cleanup function for the listener
       return () => {
         isMounted = false;
-        console.log('[AuthContext] Unsubscribing auth listener.');
+        if (IS_DEV) console.log('[AuthContext] Unsubscribing auth listener.');
         if (subscription) {
           subscription.unsubscribe();
         }
@@ -94,12 +109,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setIsLoading(false);
     });
-  }, []);
+  }, []); // 의존성 배열 비움 - 마운트 시 1회만 실행
 
   // 세션 변경 처리
   const handleSessionChange = async (session: Session) => {
     setIsLoading(true); // Set loading true when starting session handling
-    console.log('[handleSessionChange] 시작');
+    if (IS_DEV) console.log('[handleSessionChange] 시작');
+    
     try {
       if (!session.user) {
         console.error(t('auth.errors.noUserInSession', '세션에 사용자 정보가 없습니다'));
@@ -107,7 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       
-      console.log('[handleSessionChange] 세션 사용자 정보:', session.user.id);
+      if (IS_DEV) console.log('[handleSessionChange] 세션 사용자 정보:', session.user.id);
       
       // 기본 사용자 정보
       let userData: User = {
@@ -119,59 +135,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                  '사용자'
       };
       
+      // 현재 사용자와 새 세션 사용자 ID가 같으면 프로필 재조회 생략 가능한지 확인
+      const shouldSkipProfileFetch = user && user.id === session.user.id && user.user_id;
+      
+      if (shouldSkipProfileFetch) {
+        if (IS_DEV) console.log('[handleSessionChange] 기존 사용자와 ID 동일, 프로필 조회 생략');
+        // 기존 사용자 정보 유지, 로딩 완료
+        setIsLoading(false);
+        return;
+      }
+      
       try {
-        // profiles 테이블에서 사용자 ID(UUID)로 프로필 정보 조회
-        console.log('[handleSessionChange] 프로필 조회 시작 (id):', session.user.id);
+        // Edge Function을 통해 프로필 정보 조회
+        if (IS_DEV) console.log('[handleSessionChange] Edge Function을 통한 프로필 조회 시작');
         
-        console.log('[handleSessionChange] Supabase 프로필 조회 전');
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, nickname, user_id') // 필요한 컬럼만 선택
-          .eq('id', session.user.id)
-          .single();
-        console.log('[handleSessionChange] Supabase 프로필 조회 후:', { profileData, profileError });
+        const { user: profileUser } = await getUserProfile();
+        
+        if (IS_DEV) console.log('[handleSessionChange] Edge Function 프로필 조회 결과:', profileUser);
         
         // 조회 성공 시 userData 업데이트
-        if (profileData) {
-          debugProfileData(profileData, 'id로 조회 성공');
-          userData = {
-            ...userData,
-            username: profileData.nickname || userData.username, // 프로필 닉네임 우선 사용
-            user_id: profileData.user_id || undefined // user_id가 있으면 사용, 없으면 undefined
-          };
-        } else if (profileError && profileError.code !== 'PGRST116') {
-          console.error('[handleSessionChange] 프로필 조회 오류 (PGRST116 아님):', profileError);
-          // 'PGRST116' (No rows found) 에러 외의 다른 에러 발생 시 로깅
-          console.error('프로필 조회 중 오류 발생 (id 기준):', profileError);
+        if (profileUser) {
+          const extendedUser = profileUser as ExtendedUser;
+          if (extendedUser.profile) {
+            debugProfileData(extendedUser.profile, 'Edge Function으로 조회 성공');
+            userData = {
+              ...userData,
+              username: extendedUser.profile.nickname || userData.username, // 프로필 닉네임 우선 사용
+              user_id: extendedUser.profile.user_id || userData.id // user_id가 있으면 사용, 없으면 id 사용
+            };
+          } else {
+            console.warn('[handleSessionChange] 프로필 정보 없음 (profileUser.profile 없음)');
+          }
         } else {
-          console.warn('[handleSessionChange] 프로필 정보 없음 (profileData null 또는 PGRST116 오류)');
-          // profileData가 없고, 에러도 없거나 'PGRST116' 에러인 경우 (프로필이 아직 생성되지 않음 등)
-          // 이 경우 초기 userData (Google 이름 등)를 그대로 사용
-          console.warn('ID에 해당하는 프로필 정보를 찾을 수 없습니다:', session.user.id);
-          // 필요하다면 여기서 기본 프로필 생성 로직을 추가할 수도 있습니다.
+          console.warn('[handleSessionChange] 프로필 정보 없음 (profileUser null)');
         }
  
       } catch (error) {
-        console.error('[handleSessionChange] 프로필 조회 try/catch 블록 오류:', error);
-        console.error('세션 처리 중 예기치 않은 오류 발생:', error);
-        setUser(null); // Set user to null on profile fetch error
+        console.error('[handleSessionChange] 프로필 조회 오류:', error);
+        // 프로필 조회 실패 시 기본 사용자 정보만 사용
       } finally {
-        console.log('[handleSessionChange] 프로필 조회 finally 블록 시작, userData:', userData);
+        if (IS_DEV) console.log('[handleSessionChange] 프로필 조회 완료, userData:', userData);
         // Whether profile fetch succeeded or failed, set the user state
-        // If profile fetch failed, userData might only have basic info
         setUser(userData);
-        console.log('[handleSessionChange] setUser 호출됨');
       }
     } catch (error) {
-      console.error('[handleSessionChange] 외부 try/catch 블록 오류:', error);
-      console.error('세션 처리 중 오류:', error);
+      console.error('[handleSessionChange] 세션 처리 중 오류:', error);
       // 예외 발생 시 null로 설정하고 로딩 종료
       setUser(null);
     } finally {
-      console.log('[handleSessionChange] 외부 finally 블록 시작');
       setIsLoading(false); // Ensure loading is set to false after handling
-      console.log('[handleSessionChange] setIsLoading(false) 호출됨');
-      // 로딩 상태 항상 종료
     }
   };
 
@@ -246,7 +258,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 사용자 정보 업데이트 함수
+  // Edge Function을 사용한 사용자 정보 업데이트
   const updateUser = async (updatedInfo: Partial<User>) => {
     if (!user) {
       throw new Error(t('auth.errors.notLoggedIn', '로그인되지 않은 사용자'));
@@ -257,41 +269,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updatedInfo.username) {
         console.log('사용자 닉네임 업데이트:', user.id, updatedInfo.username);
         
-        // profiles 테이블에서 사용자 데이터 확인
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', user.id)
-          .single();
+        // Edge Function을 통해 프로필 업데이트
+        const { success, profile } = await updateProfile(updatedInfo.username);
         
-        if (existingProfile) {
-          // 프로필이 존재하면 업데이트
-          const { error } = await supabase
-            .from('profiles')
-            .update({ nickname: updatedInfo.username })
-            .eq('id', user.id);
-          
-          if (error) {
-            console.error('프로필 업데이트 실패:', error);
-            throw new Error(t('profilePage.usernameUpdateError', '닉네임 변경에 실패했습니다.'));
-          }
-        } else {
-          // 프로필이 없으면 새로 생성
-          const { error } = await supabase
-            .from('profiles')
-            .insert({
-              id: user.id,
-              user_id: user.id,
-              nickname: updatedInfo.username
-            });
-          
-          if (error) {
-            console.error('프로필 생성 실패:', error);
-            throw new Error(t('profilePage.usernameUpdateError', '닉네임 변경에 실패했습니다.'));
-          }
+        if (!success) {
+          throw new Error(t('profilePage.usernameUpdateError', '닉네임 변경에 실패했습니다.'));
         }
-
-        // Supabase 메타데이터 업데이트
+        
+        // Supabase Auth 메타데이터 업데이트 (로그인 세션 업데이트를 위해 필요)
         await supabase.auth.updateUser({
           data: { full_name: updatedInfo.username }
         });

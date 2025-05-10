@@ -26,69 +26,68 @@ const BattlePage: React.FC = () => {
 
   // Check if user has selected a brainrot
   useEffect(() => {
-    // 선택된 브레인롯이 없으면 로컬 스토리지에서 확인
-    if (!selectedBrainrot) {
+    // 선택된 브레인롯이 없고 로딩 중이 아닐 때만 실행
+    if (!selectedBrainrot && !isLoading) {
       const savedBrainrotId = localStorage.getItem('selectedBrainrotId');
       
-      // 저장된 ID가 있으면 디버깅 로그 출력
       if (savedBrainrotId) {
         console.log('로컬 스토리지에서 불러온 브레인롯 ID:', savedBrainrotId);
-        // context의 selectBrainrot 함수로 브레인롯 선택
-        const brainrot = context?.brainrots.find(b => b.id === savedBrainrotId);
+        const brainrot = brainrots.find(b => b.id === savedBrainrotId);
         if (brainrot) {
-          // 브레인롯 찾으면 선택
-          context?.setSelectedBrainrot(brainrot);
+          setSelectedBrainrot(brainrot);
         } else {
-          // 찾지 못했으면 홈으로 이동
           console.error('저장된 브레인롯 ID에 해당하는 브레인롯을 찾을 수 없습니다');
           navigate('/');
         }
       } else {
-        // 저장된 ID도 없으면 홈으로 이동
         console.error('선택된 브레인롯이 없습니다');
         navigate('/');
       }
     }
-  }, [selectedBrainrot, navigate, context]);
+  }, [selectedBrainrot, isLoading, brainrots, navigate, setSelectedBrainrot]);
 
-  // Find an opponent if none exists
+  // Find an opponent if none exists - 한 번만 실행되도록 최적화
   useEffect(() => {
-    if (selectedBrainrot && !opponentBrainrot && !isLoading) {
+    // 선택된 브레인롯이 있고, 상대방이 없고, 로딩 중이 아닐 때만 실행
+    if (selectedBrainrot && !opponentBrainrot && !isLoading && findOpponent) {
+      // 오직 한 번만 실행되도록 함
       findOpponent();
     }
   }, [selectedBrainrot, opponentBrainrot, isLoading, findOpponent]);
 
   // Set battle ready when both brainrots are selected
   useEffect(() => {
-    if (selectedBrainrot && opponentBrainrot) {
-      setIsBattleReady(true);
-    } else {
-      setIsBattleReady(false);
-    }
+    setIsBattleReady(!!selectedBrainrot && !!opponentBrainrot);
   }, [selectedBrainrot, opponentBrainrot]);
 
   // Handle start battle
   const handleStartBattle = async () => {
+    // 이미 배틀이 시작되었거나 로딩 중이면 중복 호출 방지
+    if (isBattleStarted || isLoading) {
+      return;
+    }
+    
     setIsBattleStarted(true);
     
     try {
-      // Add a delay for animation effect
+      // 딜레이를 단일 setTimeout으로 통합
       setTimeout(async () => {
         try {
-          // 배틀 시작
-          console.log('배틀 시작 - 선택된 브레인롯:', selectedBrainrot?.id);
-          console.log('배틀 시작 - 상대 브레인롯:', opponentBrainrot?.id);
+          // 로그 출력은 개발 모드에서만
+          if (process.env.NODE_ENV === 'development') {
+            console.log('배틀 시작 - 선택된 브레인롯:', selectedBrainrot?.id);
+            console.log('배틀 시작 - 상대 브레인롯:', opponentBrainrot?.id);
+          }
           
           await startBattle();
           
-          // Navigate to result page after battle animation
+          // 결과 페이지로 이동 - startBattle이 성공했을 때만 실행
           setTimeout(() => {
             navigate('/result', { state: { battleCompleted: true } });
           }, 1500);
         } catch (error) {
           console.error('배틀 시작 중 오류 발생:', error);
           setIsBattleStarted(false);
-          // 배틀 시작 실패 시 홈으로 이동
           alert('배틀 시작 중 오류가 발생했습니다. 다시 시도해주세요.');
           navigate('/');
         }

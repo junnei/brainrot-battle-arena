@@ -30,19 +30,27 @@ const ResultPage: React.FC = () => {
   const [battleRecorded, setBattleRecorded] = useState(false);
   const [battleNarrative, setBattleNarrative] = useState<string | null>(null);
 
-  // 디버깅을 위한 로그 추가
-  console.log('ResultPage 렌더링:', { 
-    selectedBrainrot, 
-    opponentBrainrot, 
-    battleResult, 
-    currentBattle 
-  });
+  // 디버깅을 위한 로그 추가 - 개발 모드에서만 1회 출력되도록 수정
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('ResultPage 초기 렌더링:', { 
+        selectedBrainrot, 
+        opponentBrainrot, 
+        battleResult, 
+        currentBattle 
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 의존성 배열을 비워서 초기 렌더링 시에만 실행
 
   // 캐릭터 데이터 유효성 및 로컬 상태 초기화
   useEffect(() => {
+    // 필수 데이터가 없으면 홈으로 리다이렉트
     if (!selectedBrainrot || !opponentBrainrot) {
-      console.log('필수 데이터 없음: 홈으로 리다이렉트');
-      navigate('/'); // 데이터 없을 시 홈으로 이동
+      if (process.env.NODE_ENV === 'development') {
+        console.log('필수 데이터 없음: 홈으로 리다이렉트');
+      }
+      navigate('/');
       return;
     }
     
@@ -53,25 +61,37 @@ const ResultPage: React.FC = () => {
     setBattleRecorded(false); // 배틀 기록 상태 초기화
     
     // 전투 서사 설정 (currentBattle에서 가져옴)
-    if (currentBattle && currentBattle.battleNarrative) {
-      console.log('배틀 서사 설정:', currentBattle.battleNarrative);
+    if (currentBattle?.battleNarrative) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('배틀 서사 설정:', currentBattle.battleNarrative);
+      }
       setBattleNarrative(currentBattle.battleNarrative);
     }
-  }, [selectedBrainrot, opponentBrainrot, battleResult, currentBattle, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 의존성 배열을 비워 마운트 시에만 실행
 
-  // 배틀 내역 기록
+  // 배틀 내역 기록 - 반드시 한 번만 실행되어야 함
   useEffect(() => {
     if (!localSelectedChar || !localOpponentChar) {
       return; // 필요한 데이터가 없으면 스킵
     }
 
+    // 이미 배틀이 기록되었으면 처리하지 않음
+    if (battleRecorded) {
+      return;
+    }
+
     if (currentBattle) {
-      console.log('현재 배틀 정보 있음:', currentBattle);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('현재 배틀 정보 있음:', currentBattle);
+      }
       // 이미 현재 배틀 정보가 있으니 기록 완료 표시
       setBattleRecorded(true);
       setStatsUpdated(true);
     } else if (battleResult && !battleRecorded) {
-      console.log('fallback: battleResult로 처리', battleResult);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('fallback: battleResult로 처리', battleResult);
+      }
       // battleResult로 처리 (이전 방식 호환)
       setBattleRecorded(true);
       setStatsUpdated(true);

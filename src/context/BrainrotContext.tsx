@@ -3,6 +3,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '../lib/supabase'; 
 import { Brainrot, Battle, BrainrotContextType } from '../types';
 import { useAuth } from './AuthContext'; 
+import {
+  getBrainrots,
+  getBattles,
+  createBrainrot as apiCreateBrainrot,
+  updateBrainrot as apiUpdateBrainrot,
+  deleteBrainrot as apiDeleteBrainrot,
+  startBattle as apiStartBattle,
+  uploadImage as apiUploadImage
+} from '../lib/supabase-api';
 
 // 로컬 스토리지 키
 const BRAINROTS_STORAGE_KEY = 'brainrots';
@@ -63,19 +72,7 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [error, setError] = useState<string | null>(null);
 
   // Supabase 형식의 객체를 Brainrot 타입으로 변환
-  const convertToBrainrot = (data: {
-    id: string;
-    user_id: string;
-    name: string;
-    description?: string;
-    image_url?: string;
-    created_at: string;
-    elo?: number;
-    wins?: number;
-    losses?: number;
-    total_battles?: number;
-    risk_level?: number;
-  }): Brainrot => ({
+  const convertToBrainrot = (data: any): Brainrot => ({
     id: data.id,
     userId: data.user_id,
     name: data.name,
@@ -102,43 +99,15 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setError(null);
       
       try {
-        // 브레인롯 데이터 로드
-        const { data: brainrotsData, error: brainrotsError } = await supabase
-          .from('brainrots')
-          .select('*')
-          .order('created_at', { ascending: false });
+        // Edge Function을 통해 브레인롯 데이터 로드
+        const { data: brainrotsData, total } = await getBrainrots();
 
         let fetchedBrainrots: Brainrot[] = [];
-        if (brainrotsError) {
-          console.error('브레인롯 조회 실패:', brainrotsError);
-          // 로컬 스토리지 폴백 시도 (필요한 경우)
-          const localData = localStorage.getItem(BRAINROTS_STORAGE_KEY);
-          if (localData) {
-            try {
-              fetchedBrainrots = JSON.parse(localData);
-              console.warn('Supabase 조회 실패, 로컬 데이터 사용');
-            } catch (parseError) {
-              console.error('로컬 데이터 파싱 실패:', parseError);
-              setBrainrots(sampleBrainrots); // 샘플 데이터 직접 설정
-              console.warn('Supabase 및 로컬 데이터 조회 실패, 샘플 데이터 사용');
-              
-              // 배틀 데이터 로드 건너뛰기
-              setIsLoading(false);
-              return;
-            }
-          } else {
-            setBrainrots(sampleBrainrots); // 샘플 데이터 직접 설정
-            console.warn('Supabase 및 로컬 데이터 조회 실패, 샘플 데이터 사용');
-            
-            // 배틀 데이터 로드 건너뛰기
-            setIsLoading(false);
-            return;
-          }
-        } else if (brainrotsData && brainrotsData.length > 0) {
+        if (brainrotsData && brainrotsData.length > 0) {
           fetchedBrainrots = brainrotsData.map(convertToBrainrot);
         } else {
           setBrainrots(sampleBrainrots); // 샘플 데이터 직접 설정
-          console.warn('Supabase 데이터가 비어있어 샘플 데이터를 사용합니다.');
+          console.warn('브레인롯 데이터가 없어 샘플 데이터를 사용합니다.');
           
           // 배틀 데이터 로드 건너뛰기
           setIsLoading(false);
@@ -149,39 +118,29 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // 배틀 기록 로드 (로그인 상태일 때만)
         if (user) {
           try {
-            const { data: battlesData, error: battlesError } = await supabase
-              .from('battles')
-              .select('*')
-              .order('created_at', { ascending: false })
-              .limit(50); // Limit results
+            const { data: battlesData } = await getBattles(undefined, user.user_id, 50);
 
-            if (battlesError) {
-              console.error('배틀 기록 조회 실패:', battlesError);
-              setBattles([]); // Clear or handle battle state on error
-            } else {
-              // Map fetched battle data (snake_case) to Battle interface (camelCase)
-              const mappedBattles = battlesData.map((battle: {
-                id: string;
-                player_brainrot_id: string;
-                opponent_brainrot_id: string;
-                winner_id: string | null;
-                battle_result?: string;
-                battle_narrative?: string;
-                created_at: string;
-              }): Battle => ({
-                id: battle.id, // UUID가 문자열로 반환됨
-                playerBrainrotId: battle.player_brainrot_id,
-                opponentBrainrotId: battle.opponent_brainrot_id,
-                winnerId: battle.winner_id,
-                battleResult: battle.battle_result as 'WIN' | 'LOSS' | 'DRAW' | undefined,
-                battleNarrative: battle.battle_narrative,
-                createdAt: new Date(battle.created_at),
-                playerBrainrot: fetchedBrainrots.find(b => b.id === battle.player_brainrot_id),
-                opponentBrainrot: fetchedBrainrots.find(b => b.id === battle.opponent_brainrot_id),
-                // 승패 결과 계산
-                isPlayerWon: battle.battle_result === 'WIN',
-                isDraw: battle.battle_result === 'DRAW'
-              }));
+            if (battlesData) {
+              // Map fetched battle data to Battle interface
+              const mappedBattles = battlesData.map((battle: any): Battle => {
+                const playerBrainrot = fetchedBrainrots.find(b => b.id === battle.player_brainrot_id);
+                const opponentBrainrot = fetchedBrainrots.find(b => b.id === battle.opponent_brainrot_id);
+                
+                return {
+                  id: battle.id,
+                  playerBrainrotId: battle.player_brainrot_id,
+                  opponentBrainrotId: battle.opponent_brainrot_id,
+                  winnerId: battle.winner_id,
+                  battleResult: battle.battle_result as 'WIN' | 'LOSS' | 'DRAW' | undefined,
+                  battleNarrative: battle.battle_narrative,
+                  createdAt: new Date(battle.created_at),
+                  playerBrainrot,
+                  opponentBrainrot,
+                  // 승패 결과 계산
+                  isPlayerWon: battle.battle_result === 'WIN',
+                  isDraw: battle.battle_result === 'DRAW'
+                };
+              });
               setBattles(mappedBattles); // Set battles state correctly
             }
           } catch (battleError) {
@@ -214,41 +173,10 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       throw new Error('이미지를 업로드하려면 로그인이 필요합니다');
     }
 
-    // 파일 형식 검증
-    const fileExt = file.name.split('.').pop();
-    const allowedExts = ['jpg', 'jpeg', 'png', 'gif'];
-    if (!fileExt || !allowedExts.includes(fileExt.toLowerCase())) {
-      throw new Error('지원되지 않는 파일 형식입니다. (JPG, PNG, GIF 허용)');
-    }
-    
-    // 파일 크기 검증 (5MB 이하)
-    if (file.size > 5 * 1024 * 1024) {
-      throw new Error('파일 크기가 너무 큽니다. 5MB 이하의 이미지를 사용해주세요.');
-    }
-    
-    const fileName = `${user.user_id}/${uuidv4()}.${fileExt}`; // Use text user_id for path
-    
     try {
-      // 이미지 업로드
-      const { error: uploadError } = await supabase.storage
-        .from(BRAINROT_IMAGES_BUCKET)
-        .upload(fileName, file);
-      
-      if (uploadError) {
-        console.error('이미지 업로드 오류:', uploadError);
-        throw new Error('이미지 업로드에 실패했습니다.');
-      }
-      
-      // 업로드된 이미지의 공개 URL 가져오기
-      const { data: urlData } = supabase.storage
-        .from(BRAINROT_IMAGES_BUCKET)
-        .getPublicUrl(fileName);
-        
-      if (urlData?.publicUrl) {
-        return urlData.publicUrl;
-      } else {
-        throw new Error('이미지 URL을 가져오지 못했습니다.');
-      }
+      // Edge Function을 통해 이미지 업로드
+      const { url } = await apiUploadImage(file);
+      return url;
     } catch (err) {
       console.error('이미지 업로드 중 예외 발생:', err);
       throw new Error('이미지 업로드에 실패했습니다.');
@@ -265,22 +193,21 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         throw new Error('로그인 상태가 아니거나 사용자 프로필 ID가 없습니다');
       }
 
-      // Supabase 데이터베이스 함수 호출
-      const { data: createdBrainrot, error } = await supabase.rpc(
-        'create_brainrot',
-        {
-          p_name: brainrotData.name,
-          p_description: brainrotData.description,
-          p_image_url: brainrotData.imageUrl || '',
-          p_user_id: user.user_id
-          // risk_level은 서버에서 항상 1로 설정
-        }
-      );
-
-      if (error) {
-        console.error('브레인롯 생성 오류:', error);
-        throw new Error('브레인롯 생성 중 오류가 발생했습니다');
+      // 입력값 검증
+      if (!brainrotData.name || brainrotData.name.trim().length === 0) {
+        throw new Error('브레인롯 이름은 필수입니다');
       }
+
+      if (!brainrotData.description || brainrotData.description.trim().length === 0) {
+        throw new Error('브레인롯 설명은 필수입니다');
+      }
+
+      // Edge Function을 통해 브레인롯 생성
+      const { data: createdBrainrot } = await apiCreateBrainrot({
+        name: brainrotData.name.trim(),
+        description: brainrotData.description.trim(),
+        image_url: brainrotData.imageUrl
+      });
 
       if (!createdBrainrot) {
         throw new Error('브레인롯 생성 후 데이터를 받지 못했습니다.');
@@ -314,6 +241,11 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const findOpponent = () => {
+    // 이미 로딩 중이거나 상대방이 선택되어 있으면 중복 호출 방지
+    if (isLoading || opponentBrainrot) {
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
@@ -424,8 +356,14 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // 배틀 시작 함수
   const startBattle = async () => {
+    // 이미 로딩 중이면 중복 호출 방지
+    if (isLoading) {
+      return;
+    }
+
     if (!selectedBrainrot || !opponentBrainrot) {
       console.error('브레인롯이 선택되지 않았습니다.');
+      setError('선택된 브레인롯이 없습니다');
       return;
     }
 
@@ -435,98 +373,78 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return;
     }
 
+    // 브레인롯 소유권 확인
+    if (selectedBrainrot.userId !== user.user_id) {
+      console.error('브레인롯 소유권 불일치');
+      setError('자신의 브레인롯으로만 배틀을 시작할 수 있습니다');
+      return;
+    }
+
     setIsLoading(true);
     
     try {
-      // 전투 시작 전 ELO 점수 저장
-      const playerStartElo = selectedBrainrot.elo;
-      const opponentStartElo = opponentBrainrot.elo;
+      // Edge Function을 통해 배틀 시작
+      const battleResultData = await apiStartBattle(selectedBrainrot.id, opponentBrainrot.id);
       
-      // Supabase RPC 호출을 사용하여 서버 측에서 배틀 처리
-      const { data: battleResultData, error } = await supabase.rpc('process_battle', {
-        player_brainrot_id: selectedBrainrot.id,
-        opponent_brainrot_id: opponentBrainrot.id,
-        user_id: user.user_id
-      });
-      
-      if (error) {
-        console.error('배틀 처리 중 오류 발생:', error);
-        setError('배틀 처리 중 오류가 발생했습니다.');
-        return;
-      }
-      
-      const { 
-        battle_id, 
-        battle_result, 
-        battle_narrative
+      // 결과 파싱
+      const {
+        battleId,
+        battleResult,
+        battleNarrative,
+        winnerId,
+        playerBrainrot: updatedPlayerBrainrot,
+        opponentBrainrot: updatedOpponentBrainrot,
+        playerStartElo,
+        playerEndElo,
+        opponentStartElo,
+        opponentEndElo
       } = battleResultData;
       
-      // 승자 ID 결정 (DB에서 받지 않고 클라이언트에서 계산)
-      const winner_id = battle_result === 'WIN' 
-        ? selectedBrainrot.id 
-        : (battle_result === 'LOSS' ? opponentBrainrot.id : null);
+      // 컨버전 필요 (API 응답의 snake_case를 camelCase로)
+      const convertedPlayerBrainrot = convertToBrainrot(updatedPlayerBrainrot);
+      const convertedOpponentBrainrot = convertToBrainrot(updatedOpponentBrainrot);
       
-      // 업데이트된 브레인롯 정보 가져오기
-      const [playerResult, opponentResult] = await Promise.all([
-        supabase.from('brainrots').select('*').eq('id', selectedBrainrot.id).single(),
-        supabase.from('brainrots').select('*').eq('id', opponentBrainrot.id).single()
-      ]);
+      // 상태 업데이트
+      setSelectedBrainrot(convertedPlayerBrainrot);
+      setOpponentBrainrot(convertedOpponentBrainrot);
       
-      if (playerResult.error || opponentResult.error) {
-        console.error('업데이트된 브레인롯 정보 가져오기 실패:', playerResult.error || opponentResult.error);
-        setError('배틀 결과를 불러오는 데 실패했습니다.');
-        return;
-      }
+      // 배틀 결과에 따라 승자 브레인롯 설정
+      const isPlayerWon = battleResult === 'WIN';
+      const isDraw = battleResult === 'DRAW';
+      setBattleResult(isPlayerWon ? convertedPlayerBrainrot : (isDraw ? null : convertedOpponentBrainrot));
       
-      // 결과 업데이트
-      if (playerResult.data && opponentResult.data) {
-        const updatedPlayerBrainrot = convertToBrainrot(playerResult.data);
-        const updatedOpponentBrainrot = convertToBrainrot(opponentResult.data);
-        
-        // 전투 후 ELO 점수 저장
-        const playerEndElo = updatedPlayerBrainrot.elo;
-        const opponentEndElo = updatedOpponentBrainrot.elo;
-        
-        // 상태 업데이트
-        setSelectedBrainrot(updatedPlayerBrainrot);
-        setOpponentBrainrot(updatedOpponentBrainrot);
-        
-        // 배틀 결과에 따라 승자 브레인롯 설정
-        const isPlayerWon = battle_result === 'WIN';
-        const isDraw = battle_result === 'DRAW';
-        setBattleResult(isPlayerWon ? updatedPlayerBrainrot : (isDraw ? null : updatedOpponentBrainrot));
-        
-        // 배틀 내역 생성
-        const newBattle: Battle = {
-          id: battle_id,
-          playerBrainrotId: selectedBrainrot.id,
-          opponentBrainrotId: opponentBrainrot.id,
-          winnerId: winner_id,
-          createdAt: new Date(),
-          playerBrainrot: updatedPlayerBrainrot,
-          opponentBrainrot: updatedOpponentBrainrot,
-          battleResult: battle_result,
-          battleNarrative: battle_narrative,
-          isPlayerWon: isPlayerWon,
-          isDraw: isDraw,
-          playerStartElo: playerStartElo,
-          playerEndElo: playerEndElo,
-          opponentStartElo: opponentStartElo,
-          opponentEndElo: opponentEndElo
-        };
-        
-        setCurrentBattle(newBattle);
-        setBattles(prevBattles => [newBattle, ...prevBattles]);
-        
-        // 로컬 스토리지에도 저장 (폴백)
-        localStorage.setItem(BATTLES_STORAGE_KEY, JSON.stringify([newBattle, ...battles]));
-        
-        console.log('배틀 ID:', battle_id);
-        console.log('배틀 결과:', battle_result);
-        console.log('배틀 서사:', battle_narrative);
-        console.log('플레이어 ELO 변화:', playerStartElo, '->', playerEndElo, '(변화량:', playerEndElo - playerStartElo, ')');
-        console.log('상대방 ELO 변화:', opponentStartElo, '->', opponentEndElo, '(변화량:', opponentEndElo - opponentStartElo, ')');
-      }
+      // 배틀 내역 생성
+      const newBattle: Battle = {
+        id: battleId,
+        playerBrainrotId: selectedBrainrot.id,
+        opponentBrainrotId: opponentBrainrot.id,
+        winnerId,
+        createdAt: new Date(),
+        playerBrainrot: convertedPlayerBrainrot,
+        opponentBrainrot: convertedOpponentBrainrot,
+        battleResult: battleResult as 'WIN' | 'LOSS' | 'DRAW',
+        battleNarrative,
+        isPlayerWon,
+        isDraw,
+        playerStartElo,
+        playerEndElo,
+        opponentStartElo,
+        opponentEndElo
+      };
+      
+      // 상태 한 번에 효율적으로 업데이트
+      setCurrentBattle(newBattle);
+      setBattles(prevBattles => [newBattle, ...prevBattles]);
+      
+      // 로컬 스토리지에도 저장 (폴백)
+      localStorage.setItem(BATTLES_STORAGE_KEY, JSON.stringify([newBattle, ...battles]));
+      
+      // 로그 출력
+      console.log('배틀 ID:', battleId);
+      console.log('배틀 결과:', battleResult);
+      console.log('배틀 서사:', battleNarrative);
+      console.log('플레이어 ELO 변화:', playerStartElo, '->', playerEndElo, '(변화량:', playerEndElo - playerStartElo, ')');
+      console.log('상대방 ELO 변화:', opponentStartElo, '->', opponentEndElo, '(변화량:', opponentEndElo - opponentStartElo, ')');
       
     } catch (error) {
       console.error('배틀 처리 중 오류 발생:', error);
@@ -545,32 +463,13 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // 최신 브레인롯 데이터 다시 로드
     try {
       if (selectedBrainrot) {
-        const { data, error } = await supabase
-          .from('brainrots')
-          .select('*')
-          .eq('id', selectedBrainrot.id)
-          .single();
-          
-        if (error) {
-          console.error('브레인롯 새로고침 오류:', error);
-        } else if (data) {
+        // Edge Function을 사용하여 브레인롯 정보 다시 로드
+        const { data } = await getBrainrots(undefined, 50, 1);
+        const foundBrainrot = data.find(b => b.id === selectedBrainrot.id);
+        
+        if (foundBrainrot) {
           // 선택된 브레인롯 정보 업데이트
-          const updatedBrainrot: Brainrot = {
-            id: data.id,
-            userId: data.user_id,
-            name: data.name,
-            description: data.description || '',
-            imageUrl: data.image_url || '',
-            createdAt: new Date(data.created_at),
-            elo: data.elo || 1000,
-            riskLevel: data.risk_level || 1,
-            stats: {
-              wins: data.wins || 0,
-              losses: data.losses || 0,
-              totalBattles: data.total_battles || 0
-            }
-          };
-          
+          const updatedBrainrot = convertToBrainrot(foundBrainrot);
           setSelectedBrainrot(updatedBrainrot);
           
           // 브레인롯 목록에서도 업데이트
@@ -604,6 +503,10 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         throw new Error('로그인 상태가 아닙니다');
       }
       
+      if (!brainrotId || brainrotId.trim().length === 0) {
+        throw new Error('유효하지 않은 브레인롯 ID입니다');
+      }
+      
       // 먼저 브레인롯이 현재 사용자의 것인지 확인
       const brainrotToDelete = brainrots.find(b => b.id === brainrotId);
       if (!brainrotToDelete) {
@@ -614,35 +517,20 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         throw new Error('다른 사용자의 브레인롯은 삭제할 수 없습니다');
       }
       
-      // Supabase에서 삭제
-      const { error } = await supabase
-        .from('brainrots')
-        .delete()
-        .eq('id', brainrotId);
+      // Edge Function을 사용하여 삭제
+      console.log('Edge Function으로 브레인롯 삭제 시도:', { 
+        brainrotId,
+        userId: user.user_id 
+      });
+      
+      const { success } = await apiDeleteBrainrot(brainrotId);
 
-      if (error) {
-        console.error('브레인롯 삭제 오류:', error);
+      if (!success) {
         throw new Error('브레인롯 삭제 중 오류가 발생했습니다');
       }
-
-      // 이미지 파일 삭제 (오류 발생해도 계속 진행)
-      if (brainrotToDelete.imageUrl) {
-        try {
-          const urlParts = brainrotToDelete.imageUrl.split('/');
-          const imagePath = urlParts.slice(urlParts.indexOf(BRAINROT_IMAGES_BUCKET) + 1).join('/');
-          if (imagePath) {
-            const { error: deleteImageError } = await supabase.storage
-              .from(BRAINROT_IMAGES_BUCKET)
-              .remove([imagePath]);
-            if (deleteImageError) {
-              console.warn('이미지 파일 삭제 오류:', deleteImageError);
-            }
-          }
-        } catch (imgErr) {
-          console.warn('이미지 파일 삭제 중 예외 발생:', imgErr);
-        }
-      }
-
+      
+      console.log('브레인롯 삭제 성공');
+      
       // 로컬 상태 업데이트
       const updatedBrainrots = brainrots.filter(b => b.id !== brainrotId);
       setBrainrots(updatedBrainrots);
@@ -656,6 +544,7 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       localStorage.setItem(BRAINROTS_STORAGE_KEY, JSON.stringify(updatedBrainrots));
 
     } catch (err) {
+      console.error('브레인롯 삭제 실패:', err);
       if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -675,6 +564,19 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (!user || !user.user_id) { 
         throw new Error('로그인 상태가 아닙니다');
       }
+      
+      if (!brainrotId || brainrotId.trim().length === 0) {
+        throw new Error('유효하지 않은 브레인롯 ID입니다');
+      }
+
+      // 입력값 검증
+      if (updatedData.name !== undefined && updatedData.name.trim().length === 0) {
+        throw new Error('브레인롯 이름은 공백일 수 없습니다');
+      }
+
+      if (updatedData.description !== undefined && updatedData.description.trim().length === 0) {
+        throw new Error('브레인롯 설명은 공백일 수 없습니다');
+      }
 
       // 먼저 브레인롯이 현재 사용자의 것인지 확인
       const brainrotToUpdate = brainrots.find(b => b.id === brainrotId);
@@ -691,44 +593,27 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         name?: string;
         description?: string;
         image_url?: string;
-        elo?: number;
-        wins?: number;
-        losses?: number;
-        total_battles?: number;
-        risk_level?: number;
       } = {};
       
       // 필드 매핑 (클라이언트 camelCase -> 서버 snake_case)
-      if (updatedData.name) dataToUpdate.name = updatedData.name;
-      if (updatedData.description) dataToUpdate.description = updatedData.description;
-      
-      // imageUrl은 image_url로 변환해서 저장
+      if (updatedData.name) dataToUpdate.name = updatedData.name.trim();
+      if (updatedData.description) dataToUpdate.description = updatedData.description.trim();
       if (updatedData.imageUrl) dataToUpdate.image_url = updatedData.imageUrl;
       
-      if (updatedData.elo) dataToUpdate.elo = updatedData.elo;
-      if (updatedData.stats) {
-        dataToUpdate.wins = updatedData.stats.wins;
-        dataToUpdate.losses = updatedData.stats.losses;
-        dataToUpdate.total_battles = updatedData.stats.totalBattles;
-      }
+      // Edge Function을 통한 업데이트
+      const { data } = await apiUpdateBrainrot(brainrotId, dataToUpdate);
       
-      if (updatedData.riskLevel) dataToUpdate.risk_level = updatedData.riskLevel;
-      
-      // Supabase 업데이트
-      const { error } = await supabase
-        .from('brainrots')
-        .update(dataToUpdate)
-        .eq('id', brainrotId);
-      
-      if (error) {
-        console.error('브레인롯 업데이트 오류:', error);
+      if (!data) {
         throw new Error('브레인롯 업데이트 중 오류가 발생했습니다');
       }
+      
+      // 반환된 데이터를 Brainrot 형식으로 변환
+      const updatedBrainrot = convertToBrainrot(data);
       
       // 로컬 상태 업데이트
       const updatedBrainrots = brainrots.map(brainrot => {
         if (brainrot.id === brainrotId) {
-          return { ...brainrot, ...updatedData };
+          return updatedBrainrot;
         }
         return brainrot;
       });
@@ -738,8 +623,7 @@ export const BrainrotProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       // 선택된 브레인롯이 업데이트된 경우 선택 상태도 업데이트
       if (selectedBrainrot?.id === brainrotId) {
-        const updatedSelected = updatedBrainrots.find(b => b.id === brainrotId);
-        setSelectedBrainrot(updatedSelected || null);
+        setSelectedBrainrot(updatedBrainrot);
       }
 
     } catch (err) {
